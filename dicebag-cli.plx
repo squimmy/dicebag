@@ -29,138 +29,54 @@ standard_roll();
 sub standard_roll
 {
 	my $expression = shift @ARGV;
-#	$expression =~ s/\s//g;
-#	my @parsed = parse_expression($expression);
-#	my @rolls = collate_rolls(@parsed);
-	my @rolls = parse_expression($expression);
-	print_rolls(@rolls);
+	my $rolls = parse_expression($expression);
+	handle_output($rolls);
 	exit;
 }
 
-#sub parse_expression
-#{
-#	my @parsed;
-#	
-#	for (@_)
-#	{
-#		if (/([\+\-])?(\d+)d(\d+)/i)
-#		{
-#			my $sign = "";
-#			$sign = $1 if $1;
-#			print "$_: $sign\n";
-#			my $hash = {
-#						sign	=> $sign,
-#						dice	=> $2,
-#						sides	=> $3
-#					};
-#			push @parsed, $hash;
-#		}
-#		elsif (/([\+\-])?(\d)/)
-#		{
-#			my $sign = "";
-#			$sign = $1 if $1;
-#			print "$_: $sign\n";
-#			my $hash = {
-#						sign	=> $sign,
-#						bonus	=> $2,
-#					};
-#			push @parsed, $hash;
-#		}
-#		else {die "parse_expression() has received a string it shouldn't have!"}
-#	}
-#	return @parsed;
-#}
-#
-#sub split_expression
-#{
-#	my $expression = shift;
-#	my @split;
-#	until ($expression eq "")
-#	{
-#		print "$expression\n" if $expression;
-#		if ($expression =~ /([\-\+]?\d+d\d+)/)
-#		{
-#			push @split, $1;
-#			last if ($' eq "");
-#			$expression = $';
-#		}
-#		elsif ($expression =~ /([\-\+]\d+)/)
-#		{
-#			push @split, $1;
-#			$expression = $';
-#		}
-#		else
-#		{
-#			last;
-#		}
-#
-#	}
-#	return @split;
-#}
-#
-#sub collate_rolls
-#{
-#	my @rolls;
-#	my $temp;
-#	for (@_)
-#	{
-#		if ($_->{dice})
-#		{
-#			$temp=roll($_->{dice},$_->{sides});
-#			$temp->{sign}=$_{sign};
-#			print 
-#			push @rolls, $temp;
-#		}
-#		elsif ($_->{bonus})
-#		{
-#			@{$temp->{list}} = $_->{bonus};
-#			$temp->{total} = $_->{bonus};
-#			$temp->{sign} = $_->{sign};
-#			push @rolls, $temp;
-#		}
-#		else {die "this should never happen. check input to collate_rolls()"}
-#			
-#	}
-#	return @rolls;
-#}
-		
 sub print_rolls
 {
-	my $total = 0;
-	if ($verbose)
-	{
-		for (@_)
-		{
-			print "$_->{sign} " if $_->{sign};
-			print "(",join(', ',@{$_->{list}}),") ";
-			if ($_->{sign} && $_->{sign} eq "-")
-			{
-				$total -= $_->{total};
-			}
-			else
-			{
-				$total += $_->{total};
-			}
-		}
-	}
-	else
-	{
-		for (@_)
-		{
-			print "$_->{sign} " if $_->{sign};
-			print "$_->{total} ";
-			if ($_->{sign} && $_->{sign} eq "-")
-			{
-				$total -= $_->{total};
-			}
-			else
-			{
-				$total += $_->{total};
-			}
-		}
-	}
-	
-	print "= $total\n";
+	my $result = shift;
+	print "$result\n";
+}
+		
+sub handle_output
+{
+#	my $total = 0;
+#	if ($verbose)		#revamped parser has broken verbose output :(
+#	{
+#		for (@_)
+#		{
+#			print "$_->{sign} " if $_->{sign};
+#			print "(",join(', ',@{$_->{list}}),") ";
+#			if ($_->{sign} && $_->{sign} eq "-")
+#			{
+#				$total -= $_->{total};
+#			}
+#			else
+#			{
+#				$total += $_->{total};
+#			}
+#		}
+#	}
+#	else
+#	{
+#		for (@_)
+#		{
+#			print "$_->{sign} " if $_->{sign};
+#			print "$_->{total} ";
+#			if ($_->{sign} && $_->{sign} eq "-")
+#			{
+#				$total -= $_->{total};
+#			}
+#			else
+#			{
+#				$total += $_->{total};
+#			}
+#		}
+#	}
+	my $output = shift;
+	print "$output\n";
 }
 
 
