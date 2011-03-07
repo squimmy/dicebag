@@ -15,7 +15,6 @@ sub parse_expression
 {
 	my $expression = shift;
 	$expression =~ s/\s//g; # remove whitespace from dice expression
-	print "expression is currently: $expression\n";
 	croak "Unmatched parentheses in dice expression" unless check_parens($expression);
 	my $result = interpret_expression($expression);
 	return $result;
@@ -40,6 +39,17 @@ sub interpret_expression
 	$expression =~ s/\)\(/)*(/g;
 	$expression =~ s/\d(?=\()/$&*/g;	# lazy way to do implied multiplication
 	
+	my %diceroutine			=	(	"match",	qr#\d+d\d+#,
+									"function",	\&parse_roll,
+								);
+	my %multiplierroutine	=	(	"match",	qr#\d+[\*\/]\d+#,
+									"function",	\&parse_multiplication,
+								);
+	my %additionroutine		=	(	"match",	qr#\d+[\+\-]\d+#,
+									"function",	\&parse_addition,
+								);
+	my @subroutines = (\%diceroutine,\%multiplierroutine,\%additionroutine);
+
 	until ($expression =~ /^\-?\d+$/)
 	{	
 
@@ -55,36 +65,18 @@ sub interpret_expression
 		$temp = sanitiser($batch);
 		until ($batch =~/^\d$/)
 		{
-			if ($batch =~ /\d+d\d+/)
+			INNER: for (@subroutines)
 			{
-				my $operators = $&;
-				my ($dice, $sides) = parse_operators($operators);
-				my $roll = roll($dice, $sides);
-				$batch =~ s/$operators/$roll->{total}/;
-			}
-			elsif ($batch =~ /\d+[\*\/]\d+/)
-			{
-				my $operators = $&;
-				my ($a, $b, $op) = parse_operators($operators);
-				my $result;
-				$result = $a*$b if $op eq "*";
-				$result = int($a/$b) if $op eq "/";
-				$operators = sanitiser($operators);
-				$batch =~ s/$operators/$result/;
-			}
-			elsif ($batch =~ /\d+[\-\+]\d+/)
-			{
-				my $operators = $&;
-				my ($a, $b, $op) = parse_operators($operators);
-				my $result;
-				$result = $a+$b if $op eq "+";
-				$result = $a-$b if $op eq "-";
-				$operators = sanitiser($operators);
-				$batch =~ s/$operators/$result/;
-			}
-			else
-			{
-				croak "unexpected operator encountered in expression";
+				if ($batch=~$_->{match})
+				{
+					my $operators = $&;
+
+					my $result = &{$_->{function}}($operators);
+					
+					$operators = sanitiser($operators);
+					$batch =~ s/$operators/$result/;
+					last INNER;
+				}
 			}
 			$expression =~ s/$temp/$batch/;
 			last if $batch =~ /^\-?\d+$/;
@@ -112,4 +104,28 @@ sub sanitiser
 	my $expression = shift;
 	$expression =~ s/[\.\(\)\+\?\*\{\}\[\]\|\\\^\$]/\\$&/g;
 	return $expression;
+}
+
+sub parse_roll
+{
+	my $expression = shift;
+	my ($dice, $sides) = parse_operators($expression);
+	my $result = roll($dice, $sides);
+	return $result->{total};
+}
+
+sub parse_multiplication
+{
+	my $expression = shift;
+	my ($a, $b, $op) = parse_operators($expression);
+	return ($a*$b) if $op eq "*";
+	return (int($a/$b)) if $op eq "/";
+}
+
+sub parse_addition
+{
+	my $expression = shift;
+	my ($a, $b, $op) = parse_operators($expression);
+	return ($a+$b) if $op eq "+";
+	return ($a-$b) if $op eq "-";
 }
