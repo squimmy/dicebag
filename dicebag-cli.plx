@@ -42,41 +42,10 @@ sub print_rolls
 		
 sub handle_output
 {
-#	my $total = 0;
-#	if ($verbose)		#revamped parser has broken verbose output :(
-#	{
-#		for (@_)
-#		{
-#			print "$_->{sign} " if $_->{sign};
-#			print "(",join(', ',@{$_->{list}}),") ";
-#			if ($_->{sign} && $_->{sign} eq "-")
-#			{
-#				$total -= $_->{total};
-#			}
-#			else
-#			{
-#				$total += $_->{total};
-#			}
-#		}
-#	}
-#	else
-#	{
-#		for (@_)
-#		{
-#			print "$_->{sign} " if $_->{sign};
-#			print "$_->{total} ";
-#			if ($_->{sign} && $_->{sign} eq "-")
-#			{
-#				$total -= $_->{total};
-#			}
-#			else
-#			{
-#				$total += $_->{total};
-#			}
-#		}
-#	}
 	my $output = shift;
-	print "$output\n";
+	print $output->{verbose} if $verbose;
+	print $output->{standard} unless $verbose;
+	print "\n";
 }
 
 

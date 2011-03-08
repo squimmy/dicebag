@@ -10,7 +10,6 @@ require Exporter;
 use strict;
 use Dicebag::Brain;
 
-
 sub parse_expression
 {
 	my $expression = shift;
@@ -49,7 +48,10 @@ sub interpret_expression
 									"function",	\&parse_addition,
 								);
 	my @subroutines = (\%diceroutine,\%multiplierroutine,\%additionroutine);
+	
+	my $verbose = "";
 
+	croak "unexpected operators in dice expression" if $expression =~ /[^\dd\(\)\-\+\*\/]/;
 	until ($expression =~ /^\-?\d+$/)
 	{	
 
@@ -58,10 +60,8 @@ sub interpret_expression
 
 		my $re;
 		$re = qr#\(([^\(\)]+|(??{$re}))\)#;	# finds deepest brackets in expression
-		if ($expression =~ /$re/)	# this is giving a warning... apparently using an anonymous sub should fix it?
-		{
-			$batch = $1;
-		}
+		if ($expression =~ $re)	# this is giving a warning... apparently using an anonymous sub should fix it?
+			{$batch = $1;}
 		$temp = sanitiser($batch);
 		until ($batch =~/^\d$/)
 		{
@@ -70,9 +70,11 @@ sub interpret_expression
 				if ($batch=~$_->{match})
 				{
 					my $operators = $&;
-
-					my $result = &{$_->{function}}($operators);
+					my $result= &{$_->{function}}($operators);
 					
+
+					($result, $verbose) = handle_dice_output($result, $verbose, $operators) if ((ref $result) eq "HASH");
+
 					$operators = sanitiser($operators);
 					$batch =~ s/$operators/$result/;
 					last INNER;
@@ -85,8 +87,14 @@ sub interpret_expression
 		$expression =~ s/\((\d+)\)/$1/;
 		last if $expression =~ /^\-?\d+$/;
 	}
+	my $output;
+	$output->{total} = $expression;
+	$output->{list} = $verbose;
+	$output->{standard} = "$output->{total}";
+	$output->{verbose} = "$output->{list}Total: $output->{total}";
 
-	return $expression;
+	return $output;
+
 }
 
 
@@ -111,21 +119,44 @@ sub parse_roll
 	my $expression = shift;
 	my ($dice, $sides) = parse_operators($expression);
 	my $result = roll($dice, $sides);
-	return $result->{total};
+	return $result;
 }
 
 sub parse_multiplication
 {
 	my $expression = shift;
+	my $output;
 	my ($a, $b, $op) = parse_operators($expression);
-	return ($a*$b) if $op eq "*";
-	return (int($a/$b)) if $op eq "/";
+	$output = ($a*$b) if $op eq "*";
+	$output = (int($a/$b)) if $op eq "/";
+	$output = $output;
+	return $output;
 }
 
 sub parse_addition
 {
 	my $expression = shift;
+	my $output;
 	my ($a, $b, $op) = parse_operators($expression);
-	return ($a+$b) if $op eq "+";
-	return ($a-$b) if $op eq "-";
+	$output = ($a+$b) if $op eq "+";
+	$output = ($a-$b) if $op eq "-";
+	$output = $output;
+	return $output;
+}
+
+sub handle_dice_output
+{
+	my $dice = shift;
+	my $verbose = shift;
+	my $operators = shift;
+	my $count = 0;
+	for (@{$dice->{list}})
+	{
+		$_ .= " + " unless $count == $#{$dice->{list}};
+		$count++;
+	}
+	$verbose .= "[".$operators."]: (";
+	$verbose .= $_ for @{$dice->{list}};
+	$verbose .= ") = ".$dice->{total}."\n";
+	return ($dice->{total}, $verbose)
 }
