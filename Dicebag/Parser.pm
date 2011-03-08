@@ -9,6 +9,9 @@ require Exporter;
 
 use strict;
 use Dicebag::Brain;
+use Dicebag::Formatting;
+my $re;
+$re = qr#\(([^\(\)]+|(??{$re}))\)#;	# regexp to find deepest brackets in expression
 
 sub parse_expression
 {
@@ -58,9 +61,7 @@ sub interpret_expression
 		my ($batch, $temp);
 		$batch = $expression unless $expression =~ /\(/;
 
-		my $re;
-		$re = qr#\(([^\(\)]+|(??{$re}))\)#;	# finds deepest brackets in expression
-		if ($expression =~ $re)	# this is giving a warning... apparently using an anonymous sub should fix it?
+		if ($expression =~ $re)
 			{$batch = $1;}
 		$temp = sanitiser($batch);
 		until ($batch =~/^\d$/)
@@ -149,14 +150,7 @@ sub handle_dice_output
 	my $dice = shift;
 	my $verbose = shift;
 	my $operators = shift;
-	my $count = 0;
-	for (@{$dice->{list}})
-	{
-		$_ .= " + " unless $count == $#{$dice->{list}};
-		$count++;
-	}
-	$verbose .= "[".$operators."]: (";
-	$verbose .= $_ for @{$dice->{list}};
-	$verbose .= ") = ".$dice->{total}."\n";
+	$dice->{outputlist}=convert_to_string(@{$dice->{list}}," + ");
+	$verbose .= "[".$operators."]: ($dice->{outputlist}) = ".$dice->{total}."\n";
 	return ($dice->{total}, $verbose)
 }

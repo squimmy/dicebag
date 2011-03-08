@@ -2,6 +2,8 @@
 use warnings; use strict;
 
 use Dicebag::Brain;
+use Dicebag::Games;
+#use Dicebag::Output;
 use Getopt::Long;
 use Dicebag::Parser;
 my $verbose = '';
@@ -19,27 +21,49 @@ GetOptions
 	'dnd|d20'				=> \$dnd,
 	'warhammer|40k'			=> \$warhammer,
 	'verbose'				=> \$verbose,
-	'help'					=> \$help
+	'help|?'				=> \$help
 	);
 
-help() if $help;
-standard_roll();
+my %games=
+(
+	wod			=> \&wod,
+	gurps		=> \&gurps,
+	warhammer	=> \&warhammer,
+	dnd			=> \&dnd,
+	standard	=> \&standard_roll
+);
 
+
+help() if $help;
+check_parameters($gurps,$wod,$warhammer,$dnd);
+
+my $exp1 = shift;
+my $exp2 = shift;
+my $exp3 = shift;
+one_shot($exp1, $exp2, $exp3) if $exp1;
+interactive();
+
+sub one_shot
+{
+	my $exp1 = shift;
+	my $exp2 = shift;
+	my $exp3 = shift;
+	my $gametype = choose_game();
+	my $output;
+	for (keys %games)
+	{$output = $games{$_}->($exp1, $exp2, $exp3) if $_ eq $gametype}
+	handle_output($output);
+	exit;
+}
 
 sub standard_roll
 {
-	my $expression = shift @ARGV;
+	my $expression = shift;# @ARGV;
 	my $rolls = parse_expression($expression);
 	handle_output($rolls);
 	exit;
 }
 
-sub print_rolls
-{
-	my $result = shift;
-	print "$result\n";
-}
-		
 sub handle_output
 {
 	my $output = shift;
@@ -48,6 +72,25 @@ sub handle_output
 	print "\n";
 }
 
+sub check_parameters
+{
+	my $count = 0;
+	for (@_){$count++ if $_}
+	if ($count > 1)
+	{
+		print "You can only play one game at a time!\n";
+		exit;
+	}
+}
+
+sub choose_game
+{
+	return "gurps" if $gurps;
+	return "wod" if $wod;
+	return "dnd" if $dnd;
+	return "warhammer" if $warhammer;
+	return "standard";
+}
 
 sub help
 {
