@@ -10,8 +10,9 @@ require Exporter;
 use strict;
 use Dicebag::Brain;
 use Dicebag::Formatting;
-my $re;
-$re = qr#\(([^\(\)]+|(??{$re}))\)#;	# regexp to find deepest brackets in expression
+my ($deepestparens, $matchingparens);
+$deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;	# regexp to find deepest brackets in expression
+$matchingparens = qr#\((?:[^\(\)]|(??{$matchingparens}))*\)#;	# regexp to find matching brackets
 
 sub parse_expression
 {
@@ -41,27 +42,32 @@ sub interpret_expression
 	$expression =~ s/\)\(/)*(/g;
 	$expression =~ s/\d(?=\()/$&*/g;	# lazy way to do implied multiplication
 	
-	my %diceroutine			=	(	"match",	qr#\d+d\d+#,
-									"function",	\&parse_roll,
+	my %rollfunction		=	(	match		=> qr#(?:(?:(?:h|l)\{\d+\})|(?:h+|l+))\d+d\d+#,
+									function	=> \&special_roll
 								);
-	my %multiplierroutine	=	(	"match",	qr#\d+[\*\/]\d+#,
-									"function",	\&parse_multiplication,
+
+	my %diceroutine			=	(	match		=> qr#\d+d\d+#,
+									function	=> \&parse_roll,
 								);
-	my %additionroutine		=	(	"match",	qr#\d+[\+\-]\d+#,
-									"function",	\&parse_addition,
+	my %multiplierroutine	=	(	match		=> qr#\d+[\*\/]\d+#,
+									function	=> \&parse_multiplication,
 								);
-	my @subroutines = (\%diceroutine,\%multiplierroutine,\%additionroutine);
+	my %additionroutine		=	(	match		=> qr#\d+[\+\-]\d+#,
+									function	=> \&parse_addition,
+								);
+	my @subroutines = (\%rollfunction,\%diceroutine,\%multiplierroutine,\%additionroutine);
 	
 	my $verbose = "";
 
-	croak "unexpected operators in dice expression" if $expression =~ /[^\dd\(\)\-\+\*\/]/;
+	croak "unexpected operators in dice expression" if $expression =~ /[^\{\}\ddhl\(\)\-\+\*\/#]/;
+	$expression = expand_expression($expression);
 	until ($expression =~ /^\-?\d+$/)
 	{	
 
 		my ($batch, $temp);
 		$batch = $expression unless $expression =~ /\(/;
 
-		if ($expression =~ $re)
+		if ($expression =~ $deepestparens)
 			{$batch = $1;}
 		$temp = sanitiser($batch);
 		until ($batch =~/^\d$/)
@@ -72,7 +78,6 @@ sub interpret_expression
 				{
 					my $operators = $&;
 					my $result= &{$_->{function}}($operators);
-					
 
 					($result, $verbose) = handle_dice_output($result, $verbose, $operators) if ((ref $result) eq "HASH");
 
@@ -104,7 +109,7 @@ sub interpret_expression
 sub parse_operators
 {
 	my $expression = shift;
-	$expression =~ /(\d+)([d\*\/\+\-])(\d+)/;
+	$expression =~ /(\d+)([dhl\*\/\+\-])(\d+)/;
 	return ($1, $3, $2);
 }
 
@@ -118,8 +123,8 @@ sub sanitiser
 sub parse_roll
 {
 	my $expression = shift;
-	my ($dice, $sides) = parse_operators($expression);
-	my $result = roll($dice, $sides);
+	my ($dice, $sides, $op) = parse_operators($expression);
+	my $result = roll($dice, $sides) if $op =~ /d/;
 	return $result;
 }
 
@@ -153,4 +158,50 @@ sub handle_dice_output
 	$dice->{outputlist}=convert_to_string(@{$dice->{list}}," + ");
 	$verbose .= "[".$operators."]: ($dice->{outputlist}) = ".$dice->{total}."\n";
 	return ($dice->{total}, $verbose)
+}
+
+sub expand_expression
+{
+
+	my $expression = shift;
+	while ($expression =~ /#/)
+	{
+		$expression =~ /((\d+)#($matchingparens))/;
+		my $output = (($3."+")x($2-1)).$3;
+		my $match = $1;
+		$match = sanitiser($match);
+		$expression =~ s/$match/($output)/g;
+	}
+	return $expression
+}
+
+sub special_roll
+{
+	my $expression = shift;
+	my $highlow;
+	$highlow = "h" if $expression =~ /h/;
+	$highlow = "l" if $expression =~ /l/;
+	my $number = parse_count($expression, $highlow);
+	my ($dice, $sides, $op) = parse_operators($expression);
+	my $result;
+	$result = keep_highest($dice, $sides, $number) if $highlow eq "h";
+	$result = keep_lowest($dice, $sides, $number) if $highlow eq "l";
+	return $result;
+}
+
+sub parse_count
+{
+	my $expression = shift;
+	my $x = shift;
+	my $number;
+	if ($expression =~ /\{/)
+	{
+		$expression =~ /\{(\d+)\}/;
+		$number = $1;
+	}
+	else
+	{
+		$number = ($expression =~ s/$x/$x/g);
+	}
+	return $number;
 }
