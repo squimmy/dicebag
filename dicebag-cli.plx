@@ -6,6 +6,7 @@ use Dicebag::Games;
 #use Dicebag::Output;
 use Getopt::Long;
 use Dicebag::Parser;
+use Dicebag::Verbose;
 my $verbose = '';
 my $gurps = '';
 my $wod = '';
@@ -17,7 +18,7 @@ my $help = '';
 GetOptions
 	(
 	'gurps'					=> \$gurps,
-	'wod|mage|vampire'		=> \$wod,
+	'wod'					=> \$wod,
 	'dnd|d20'				=> \$dnd,
 	'warhammer|40k'			=> \$warhammer,
 	'verbose'				=> \$verbose,
@@ -67,8 +68,8 @@ sub standard_roll
 sub handle_output
 {
 	my $output = shift;
-	print $output->{verbose} if $verbose;
-	print $output->{standard} unless $verbose;
+	print (return_verbose()."Total: ") if $verbose;
+	print $output->{standard};
 	print "\n";
 }
 

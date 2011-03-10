@@ -2,6 +2,7 @@ package Dicebag::Brain;
 
 use warnings;
 use Carp;
+use Dicebag::Verbose;
 
 require Exporter;
 @ISA = (Exporter);
@@ -16,16 +17,17 @@ sub rollthebones
 	return int(rand $dice)+1;
 }
 
-sub roll_lots
+sub roll
 {
 	my $dice = shift;
 	my $sides = shift;
+	my $flag = shift;
 	my @total;
 	for (1..$dice)
 	{
 		push @total, rollthebones($sides);
 	}
-
+	verbose_output($dice, $sides, @total) unless $flag;
 	return @total;
 }
 
@@ -34,15 +36,30 @@ sub recursive_rolling
 	my $dice		= shift;
 	my $sides		= shift;
 	my $threshold	= shift;
+	my $sign 		= shift;
+	my $count 		= shift;
+	my @roll;
+	my @total;
+	my $initial = $dice;
+	while ($dice)
+	{
+		@roll = roll($dice, $sides, 1);
+		push @total, @roll;
+		if ($sign == 1)
+		{$dice = grep {$_ >= $threshold} @roll;}
+		elsif ($sign == -1)
+		{$dice = grep {$_ <= $threshold} @roll;}
+		else
+		{$dice = grep {$_ == $threshold} @roll;}
+		if ($count)
+		{$count--; last if $count ==0;}
+	}
 
-	push my @rolls, roll_lots($dice, $sides);
-	$dice = grep {$_ >= $threshold} @rolls;
-	push (@rolls, recursive_rolling($dice, $sides, $threshold)) if $dice;
-
-	return @rolls;
+	verbose_output($initial, $sides, @total,);
+	return @total;
 }
 
-sub roll
+sub roll_old
 {
 	my $dice = shift;
 	croak 'number of dice must be an integer greater than 0' unless (($dice=~/^\d+$/) && ($dice > 0));
@@ -67,37 +84,27 @@ sub roll
 
 sub keep_highest
 {
-	my $output = keep_x(@_,1);
-	return $output;
+	return keep_x(@_,1);
 }
 	
 sub keep_lowest
 {
-	my $output = keep_x(@_,-1);
-	return $output;
+	return keep_x(@_,-1);
 }
 
 sub keep_x
 {
-	my $dice = shift;
-	my $sides = shift;
-	my $top = shift;
-	my $highlow = shift;
-	my @rolls = roll_lots($dice, $sides);
+	my $highlow = pop;
+	my $top = pop;
+	my @rolls = @_;
 	my @sorted;
 	if ($highlow > 0)
 	{@sorted = (sort {$b <=> $a}  @rolls);}
-	if ($highlow < 0)
+	elsif ($highlow < 0)
 	{@sorted = (sort {$a <=> $b}  @rolls);}
 
 	splice @sorted, $top;
 
-	my $total = 0;
-	$total += $_ for @sorted;
-	return
-	{
-		total	=> $total,
-		list	=> \@rolls
-	};
+	return	@sorted;
 }
 1;

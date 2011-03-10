@@ -8,7 +8,6 @@ require Exporter;
 @EXPORT = qw(gurps wod warhammer dnd);
 
 use Dicebag::Brain;
-use Dicebag::Formatting;
 
 use strict;
 sub gurps
@@ -131,7 +130,7 @@ sub dnd_passfail
 sub gurps_formatting
 {
 	my $output = shift;
-	$output->{outputlist} = convert_to_string(@{$output->{list}}," + ");
+	$output->{outputlist} = join(" + ",@{$output->{list}});
 	
 	$output->{standard}="$output->{total}: $output->{result}";
 
@@ -154,7 +153,7 @@ sub wod_formatting
 {
 	my $output = shift;
 
-	$output->{outputlist} = convert_to_string(@{$output->{list}},", ");
+	$output->{outputlist} = join(" + ",@{$output->{list}});
 
 	$output->{standard} = "$output->{total}";
 	$output->{verbose} = "($output->{outputlist}) = $output->{total}";
@@ -166,7 +165,7 @@ sub warhammer_formatting
 {
 	my $output = shift;
 
-	$output->{outputlist} = convert_to_string(@{$output->{list}},", ");
+	$output->{outputlist} = join(" + ",@{$output->{list}});
 
 	$output->{standard} = "$output->{total}";
 	$output->{verbose} = "($output->{outputlist}) = $output->{total}";
