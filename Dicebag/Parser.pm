@@ -4,7 +4,7 @@ use warnings;
 use Carp;
 require Exporter;
 @ISA = (Exporter);
-@EXPORT = qw(parse_expression);
+@EXPORT = qw(parse_expression find_expression_errors);
 
 use strict;
 use Dicebag::Brain;
@@ -14,12 +14,26 @@ $deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;		# regexp to find deep
 $matchingparens = qr#\((?:[^\(\)]|(??{$matchingparens}))*\)#;	# regexp to find matching brackets
 $hilo = qr#(?:(?:h|l)\{\d+\})|(?:h+|l+)#;						# regexp to find high/low function
 $rprefix = qr#(?:\d+?[\+\-]?(?:\{\d+\})?)?r#;					# regexp to find recursion prefix
+
+sub find_expression_errors
+{
+	my $fail = 0;
+	my $expression = shift;
+	$fail = "unmatched parentheses" unless check_parens($expression);
+	$fail = "unmatched braces" unless check_braces($expression);
+	$fail = "empty string" unless $expression =~ /\d/;
+	$fail = "unrecognised character" if $expression =~ /[^\(\)\d\-\+\/\*hldr\{\}]/;
+	$fail = "dice operator preceeded by non-numeric value" if $expression =~ /[\(rhld\+\-\*\/\{]d/;
+	$fail = "infinite recurisive rolling likely" if $expression =~/(?:[^\d]|^)1\+r/;
+	return $fail;
+}
 sub parse_expression
 {
 	my $expression = shift;
 	$expression =~ s/\s//g; # remove whitespace from dice expression
 	$expression =~s/\(\)//g; # remove empty brackets
 	croak "Unmatched parentheses in dice expression" unless check_parens($expression);
+	croak "Unmatched braces in dice expression" unless check_braces($expression);
 	my $result = interpret_expression($expression);
 	return $result;
 }
@@ -37,6 +51,18 @@ sub check_parens
 	return ($count==0)?1:0;
 }
 
+sub check_braces
+{
+	my $expression = shift;
+	my $count = 0;
+	while ($expression =~ /([\{\}])/g)
+	{
+		$count++ if $1 eq "{";
+		$count-- if $1 eq "}";
+		return 0 if $count<0;
+	}
+	return ($count==0)?1:0;
+}
 sub interpret_expression
 {
 	my $expression = shift;
