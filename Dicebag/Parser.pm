@@ -9,11 +9,12 @@ require Exporter;
 use strict;
 use Dicebag::Brain;
 
-my ($deepestparens, $matchingparens, $hilo, $rprefix);
+my ($deepestparens, $matchingparens, $hilo, $rprefix, $gtlt);
 $deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;		# regexp to find deepest brackets in expression
 $matchingparens = qr#\((?:[^\(\)]|(??{$matchingparens}))*\)#;	# regexp to find matching brackets
 $hilo = qr#(?:(?:h|l)\{\d+\})|(?:h+|l+)#;						# regexp to find high/low function
 $rprefix = qr#(?:\d+?[\+\-]?(?:\{\d+\})?)?r#;					# regexp to find recursion prefix
+$gtlt = qr#(?:\=[\<\>]?)|(?:[\<\>])#;							# regexp to find <,>,=,<= and >=
 
 sub find_expression_errors
 {
@@ -22,11 +23,12 @@ sub find_expression_errors
 	$fail = "unmatched parentheses" unless check_parens($expression);
 	$fail = "unmatched braces" unless check_braces($expression);
 	$fail = "empty string" unless $expression =~ /\d/;
-	$fail = "unrecognised character" if $expression =~ /[^\(\)\d\-\+\/\*hldr\{\}]/;
+	$fail = "unrecognised character" if $expression =~ /[^\=\<\>\(\)\d\-\+\/\*hldr\{\}]/;
 	$fail = "dice operator preceeded by non-numeric value" if $expression =~ /[\(rhld\+\-\*\/\{]d/;
 	$fail = "infinite recurisive rolling likely" if $expression =~/(?:[^\d]|^)1\+r/;
 	return $fail;
 }
+
 sub parse_expression
 {
 	my $expression = shift;
@@ -69,7 +71,7 @@ sub interpret_expression
 	my $starttime = time;
 	$expression =~ s/\)\(/)*(/g;
 	$expression =~ s/\d(?=\()/$&*/g;	# lazy way to do implied multiplication
-	$expression =~ s/$hilo\(1d/(1d/g;	# what's this for? :(
+	$expression =~ s/$hilo\(1d/(1d/g;	# remove meaningless h/l operators
 	my %recursiveroll		=	(	match		=> qr#$rprefix+\d+d\d+#,
 									function	=> \&parse_recursion
 								);
@@ -88,16 +90,19 @@ sub interpret_expression
 	my %dicefunction		=	(	match		=> qr#$hilo\([\d\+]+\)#,
 									function	=> \&dice_function,
 								);
+	my %gtlt				=	(	match		=> qr#\([\d\+]+\)$gtlt\d+#,
+									function	=> \&gtlt,
+								);
 	my %stripbrackets		=	(	match		=> qr#^\(+\d+\)*$#,
 									function	=> \&strip_brackets,
 								);
 
-	my @subroutines = (\%recursiveroll,\%specialroll,\%diceroutine,\%dicefunction,\%multiplierroutine,\%additionroutine,);
+	my @subroutines = (\%gtlt,\%recursiveroll,\%specialroll,\%diceroutine,\%dicefunction,\%multiplierroutine,\%additionroutine);
 	
 	my $verbose = "";
 
 
-	croak "unexpected operators in dice expression" if $expression =~ /[^\{\}\ddrhl\(\)\-\+\*\/#]/;
+	croak "unexpected operators in dice expression" if $expression =~ /[^\=\<\>\{\}\ddrhl\(\)\-\+\*\/#]/;
 	$expression = expand_expression($expression);
 	until ($expression =~ /^\-?\d+$/)
 	{	
@@ -112,6 +117,7 @@ sub interpret_expression
 		$temp = sanitiser($batch);
 		while ($batch)
 		{
+			print "$batch\n";
 			croak "taking too long" if time - $starttime > 3;
 			INNER: for (@subroutines)
 			{
@@ -159,7 +165,7 @@ sub parse_operators
 sub sanitiser
 {
 	my $expression = shift;
-	$expression =~ s/[\.\(\)\+\?\*\{\}\[\]\|\\\^\$]/\\$&/g if $expression;
+	$expression =~ s/[\=\<\>\.\(\)\+\?\*\{\}\[\]\|\\\^\$]/\\$&/g if $expression;
 	return $expression;
 }
 
@@ -249,9 +255,11 @@ sub find_functions
 	{
 		my $match = sanitiser($batch);
 		if ($expression =~ /($hilo\($match\))/)
-		{$batch = $1;}
+			{$batch = $1;}
+		elsif ($expression =~ /(\($match\)$gtlt\d+)/)
+			{$batch = $1;}
 		elsif ($expression =~ /(\($match\))/)
-		{$batch = $1;}
+			{$batch = $1;}
 	}
 	return $batch;
 }
@@ -275,6 +283,38 @@ sub dice_function
 	}
 	else
 		{$result = $1}
+	return $result;
+}
+
+
+sub gtlt
+{
+	print "entered gtlt\n";
+	my $expression = shift;
+	print "expression is $expression\n";
+	my $inclusive;
+	my $result;
+	$inclusive = 1 if $expression =~ /\=/;
+	$expression =~ /(\d+)$/;
+	my $number = $1;
+	$expression =~ /\(([\d\+]+)\)/;
+	my @args = split(/\+/,$1);
+	if ($inclusive)
+	{
+		if ($expression =~ /\>/)
+			{$result = grep {$_>=$number} @args;}
+		elsif ($expression =~ /\</)
+			{$result = grep {$_<=$number} @args;}
+		else
+			{$result = grep {$_==$number} @args;}
+	}
+	else
+	{
+		if ($expression =~ /\>/)
+			{$result = grep {$_>$number} @args;}
+		elsif ($expression =~ /\</)
+			{$result = grep {$_<$number} @args;}
+	}
 	return $result;
 }
 
