@@ -18,6 +18,7 @@ sub parse_expression
 {
 	my $expression = shift;
 	$expression =~ s/\s//g; # remove whitespace from dice expression
+	$expression =~s/\(\)//g; # remove empty brackets
 	croak "Unmatched parentheses in dice expression" unless check_parens($expression);
 	my $result = interpret_expression($expression);
 	return $result;
@@ -42,7 +43,7 @@ sub interpret_expression
 	my $starttime = time;
 	$expression =~ s/\)\(/)*(/g;
 	$expression =~ s/\d(?=\()/$&*/g;	# lazy way to do implied multiplication
-	
+	$expression =~ s/$hilo\(1d/(1d/g;	# what's this for? :(
 	my %recursiveroll		=	(	match		=> qr#$rprefix+\d+d\d+#,
 									function	=> \&parse_recursion
 								);
@@ -61,8 +62,11 @@ sub interpret_expression
 	my %dicefunction		=	(	match		=> qr#$hilo\([\d\+]+\)#,
 									function	=> \&dice_function,
 								);
+	my %stripbrackets		=	(	match		=> qr#^\(+\d+\)*$#,
+									function	=> \&strip_brackets,
+								);
 
-	my @subroutines = (\%recursiveroll,\%specialroll,\%diceroutine,\%dicefunction,\%multiplierroutine,\%additionroutine);
+	my @subroutines = (\%recursiveroll,\%specialroll,\%diceroutine,\%dicefunction,\%multiplierroutine,\%additionroutine,);
 	
 	my $verbose = "";
 
@@ -80,9 +84,9 @@ sub interpret_expression
 				$batch = find_functions($expression, $batch);
 			}
 		$temp = sanitiser($batch);
-		until ($batch =~/^\d$/)
+		while ($batch)
 		{
-			croak "taking too long" if time - $starttime > 2;
+			croak "taking too long" if time - $starttime > 3;
 			INNER: for (@subroutines)
 			{
 				if ($batch=~$_->{match})
@@ -93,13 +97,18 @@ sub interpret_expression
 					$batch =~ s/$operators/$result/;
 					last INNER;
 				}
+				else
+				{
+					while ($batch =~ /^\(+\-?\d+\)+$/)
+					{$batch=strip_brackets($batch);}
+				}
 			}
-			$expression =~ s/$temp/$batch/;
-			last if $batch =~ /^\-?\d+$/;
+			last if $batch =~/^[\-\d+\+]+$/;
 		}
-	
-		$expression =~ s/\((\d+)\)/$1/;
+			$expression =~ s/$temp/$batch/;
 		last if $expression =~ /^\-?\d+$/;
+		$expression = strip_brackets($expression) if $expression=~/^\(\-?\d+\)$/;
+		last if $expression =~/^\-?\d+$/;
 	}
 	my $output;
 	$output->{total} = $expression;
@@ -124,7 +133,7 @@ sub parse_operators
 sub sanitiser
 {
 	my $expression = shift;
-	$expression =~ s/[\.\(\)\+\?\*\{\}\[\]\|\\\^\$]/\\$&/g;
+	$expression =~ s/[\.\(\)\+\?\*\{\}\[\]\|\\\^\$]/\\$&/g if $expression;
 	return $expression;
 }
 
@@ -159,19 +168,6 @@ sub parse_addition
 	return $output;
 }
 
-#sub handle_dice_output
-#{
-#	my $dice_ref = shift;
-#	my $verbose = shift;
-#	my $operators = shift;
-#	my @dice = @$dice_ref;
-#	my $total = 0;
-#	$total += $_ for @dice;
-#	my $outputlist=join(" + ",@dice);
-#	$verbose .= "[".$operators."]: ($outputlist) = ".$total."\n";
-#	my $output = join("+",@dice);
-#	return ($output, $verbose)
-#}
 
 sub expand_expression
 {
@@ -223,9 +219,14 @@ sub find_functions
 {
 	my $expression = shift;
 	my $batch = shift;
-	my $match = sanitiser($batch);
-	if ($expression =~ /($hilo\($match\))/)
-	{$batch = $1;}
+	if ($batch =~ /^[\d\+]+$/)
+	{
+		my $match = sanitiser($batch);
+		if ($expression =~ /($hilo\($match\))/)
+		{$batch = $1;}
+		elsif ($expression =~ /(\($match\))/)
+		{$batch = $1;}
+	}
 	return $batch;
 }
 
@@ -233,16 +234,22 @@ sub dice_function
 {
 	my $expression = shift;
 	my $highlow;
+	my $result;
 	$highlow = "h" if $expression =~ /h/;
 	$highlow = "l" if $expression =~ /l/;
 	my $number = parse_count($expression, $highlow);
 	$expression =~ /\(([\d\+]+)\)/;
 	my @args = split(/\+/,$1);
-	my @result;
-	@result = keep_highest(@args, $number) if $highlow eq "h";
-	@result = keep_lowest(@args, $number) if $highlow eq "l";
-
-	return @result;
+	if ($number < @args)
+	{
+		my @result;
+		@result = keep_highest(@args, $number) if $highlow eq "h";
+		@result = keep_lowest(@args, $number) if $highlow eq "l";
+		$result = join("+",@result);
+	}
+	else
+		{$result = $1}
+	return $result;
 }
 
 sub parse_recursion
@@ -251,7 +258,7 @@ sub parse_recursion
 	my ($threshold, $dice, $sides, $sign, $count, @result, $result);
 	while ($expression =~ /r/)
 	{
-		if ($expression =~ /(?:(\d+)?([\+\-])?(?:\{(\d+)\})?)?r\(?(\d+)d(\d+)\)?/) ## 
+		if ($expression =~ /(?:(\d+)?([\+\-])?(?:\{(\d+)\})?)?r\(?(\d+)d(\d+)\)?/)
 		{
 			my $batch = $&;
 			$dice = $4;	$sides = $5;
@@ -302,5 +309,12 @@ sub parse_recursion
 			$expression =~ s/$batch/$result/;
 		}
 	}
+	return $expression;
+}
+
+sub strip_brackets
+{
+	my $expression = shift;
+	$expression =~ s/\((\d+)\)/$1/;
 	return $expression;
 }

@@ -68,7 +68,15 @@ sub standard_roll
 sub handle_output
 {
 	my $output = shift;
-	print (return_verbose()."Total: ") if $verbose;
+	if ($verbose)
+	{
+		my $verboseout = return_verbose();
+		if ($verboseout)
+		{
+			$verboseout .="Total: ";
+			print $verboseout;
+		}
+	}
 	print $output->{standard};
 	print "\n";
 }
