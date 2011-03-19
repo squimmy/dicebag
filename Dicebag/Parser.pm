@@ -8,13 +8,121 @@ require Exporter;
 
 use strict;
 use Dicebag::Brain;
+use Data::Dumper;
 
-my ($deepestparens, $matchingparens, $hilo, $rprefix, $gtlt);
+my ($deepestparens, $matchingparens);
 $deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;		# regexp to find deepest brackets in expression
 $matchingparens = qr#\((?:[^\(\)]|(??{$matchingparens}))*\)#;	# regexp to find matching brackets
-$hilo = qr#(?:(?:h|l)\{\d+\})|(?:h+|l+)#;						# regexp to find high/low function
-$rprefix = qr#(?:\d+?[\+\-]?(?:\{\d+\})?)?r#;					# regexp to find recursion prefix
-$gtlt = qr#(?:\=[\<\>]?)|(?:[\<\>])#;							# regexp to find <,>,=,<= and >=
+my $hilo = qr#(?:(?:h|l)\{\d+\})|(?:h+|l+)#;						# regexp to find high/low function
+my $rprefix = qr#(?:\d+?[\+\-]?(?:\{\d+\})?)?r#;					# regexp to find recursion prefix
+my $gtlt = qr#(?:[\<\>]?\=)|(?:[\<\>])#;							# regexp to find <,>,=,<= and >=
+my $operand = qr#(?:\-?\d+)|$matchingparens#;						# rexexp to find operands
+my $operator = qr#[\+\-\*\/\d]#;									# regexp to find operators
+my $rec_op = qr#r(?:{\d+})?#;									# regexp to find recursive soll operator
+my $token_operators = qr#[d\(\)\+\-\*\/]|$hilo|$gtlt|$rec_op#;	# regexp to find any/all tokens
+my $binary_operators = qr#[d\/\*\+\-]|$gtlt#;						# regexp to find binary operators
+my $unary_operators = qr#$hilo#;									# regexp to find unary operators
+my $number = qr#\-?\d+#;											# regexpt to find numbers
+
+sub parse_expression
+{
+	my $expression = shift;
+	$expression =~ s/\s//g; 							# remove whitespace from dice expression
+	$expression =~ s/\d(?=\()/$&*/g;					# lazy way to do implied multiplication
+	my $fail = find_expression_errors($expression);
+	croak "$fail" if $fail;
+	#let's put a whole pile of brackets everywhere!
+	$expression =~ s/(${operand}#${operand})/($1)/g;
+	$expression =~ s/(${operand}d${operand})/($1)/g;
+	$expression =~ s/(${operand}?r${operand})/($1)/g;
+	$expression =~ s/(${hilo}${operand})/($1)/g;
+	$expression =~ s/(${operand}${gtlt}${operand})/($1)/g;
+	$expression =~ s/(${operand}[\/\*]${operand})/($1)/g;
+	$expression =~ s/(${operand}[\+\-]${operand})/($1)/g;
+	#ok now that's out of the way...
+
+	$expression = expand_expression($expression);
+
+	my @tokens = lex($expression);
+	@tokens = reverse@tokens;
+
+	my $tree = {};
+	$tree = parse(@tokens);
+
+	my $result;
+
+	if ($tree)
+	{
+		$result = evaluate($tree);
+	}
+	else
+	{
+		$result = '*ERROR*';
+	}
+
+	return $result;
+}
+
+sub parse
+{
+	my @tokens = @_;
+	my $node;
+	my @temp;
+	my $token;
+	while (@tokens)
+	{
+		$token = shift(@tokens);
+
+
+		if ($token eq ")")
+		{
+			($token, @tokens) = parse(@tokens);
+		}
+		elsif ($token eq "(")
+		{
+			if (@temp == 1)
+			{
+				$node = $temp[0];
+			}
+			return ($node, @tokens);
+		}
+		if ($token)
+		{
+			push @temp, $token;
+			if (@temp == 2)
+			{
+				if ($token =~ /$unary_operators|$rec_op/)
+				{
+					$node->{op} = $token;
+					$node->{rhs} = $temp[0];
+					undef @temp; undef $token;
+				}
+			}
+			elsif (@temp == 3)
+			{
+				if ($temp[1] =~ /$binary_operators/)
+				{
+					$node->{lhs} = $temp[2];
+					$node->{rhs} = $temp[0];
+					$node->{op} = $temp[1];
+					undef @temp; undef $token;
+				}
+			}
+		}
+	}
+	if (!@tokens && @temp == 1)
+	{
+		$node =  $temp[0];
+	}
+	if (@tokens)
+	{
+		return $node, @tokens;
+	}
+	else
+	{
+		return $node;
+	}
+}
 
 sub find_expression_errors
 {
@@ -29,17 +137,45 @@ sub find_expression_errors
 	return $fail;
 }
 
-sub parse_expression
+sub expand_expression
 {
 	my $expression = shift;
-	$expression =~ s/\s//g; # remove whitespace from dice expression
-	$expression =~s/\(\)//g; # remove empty brackets
-	$expression = group_dice($expression);
-	croak "Unmatched parentheses in dice expression" unless check_parens($expression);
-	croak "Unmatched braces in dice expression" unless check_braces($expression);
-	my $result = interpret_expression($expression);
-	return $result;
+	while ($expression =~ /($operand)#($operand)/)
+	{
+		my $lhs = parse_expression($1);
+		my $lhsold = quotemeta($1);
+		my $rhs = (("($2)+"x($lhs-1))."($2)");
+		my $rhsold = quotemeta($2);
+		$expression =~ s/${lhsold}#${rhsold}/${lhs}#${rhs}/;
+	}
+	return $expression;
 }
+
+sub lex
+{
+	my $expression = shift;
+	my @tokens;
+	while ($expression)
+	{
+		if (!@tokens)
+		{
+			$expression =~ s/^((?:\-?\d+)|$token_operators)//;
+			push @tokens, $1;
+		}
+		elsif ($tokens[$#tokens] =~ /$number|\)/)
+		{
+			$expression =~ s/^($token_operators)//;
+			push @tokens, $1;
+		}
+		else
+		{
+			$expression =~ s/^((?:\-?\d+)|$token_operators)//;
+			push @tokens, $1;
+		}
+	}
+	return @tokens;
+}
+
 
 sub check_parens
 {
@@ -54,6 +190,7 @@ sub check_parens
 	return ($count==0)?1:0;
 }
 
+
 sub check_braces
 {
 	my $expression = shift;
@@ -66,326 +203,95 @@ sub check_braces
 	}
 	return ($count==0)?1:0;
 }
-sub interpret_expression
+
+
+
+
+
+
+
+
+
+
+
+my @operators = (
+{	operator	=> "+",
+	function	=> \&add
+},{
+	operator	=> "-",
+	function	=> \&subtract
+},{
+	operator	=> "/",
+	function	=> \&divide
+},{
+	operator	=> "*",
+	function	=> \&multiply
+},{
+	operator	=> "d",
+	function	=> \&dice
+},{
+	operator	=> "r",
+	function	=> \&recursive_dice
+});
+
+sub evaluate
 {
-	my $expression = shift;
-	my $starttime = time;
-	$expression =~ s/\)\(/)*(/g;
-	$expression =~ s/\d(?=\()/$&*/g;	# lazy way to do implied multiplication
-	$expression =~ s/$hilo\(1d/(1d/g;	# remove meaningless h/l operators
-	my %recursiveroll		=	(	match		=> qr#$rprefix+\(\d+d\d+\)#,
-									function	=> \&parse_recursion
-								);
-	my %specialroll			=	(	match		=> qr#$hilo\d+d\d+#,
-									function	=> \&special_roll
-								);
-	my %diceroutine			=	(	match		=> qr#\d+d\d+#,
-									function	=> \&parse_roll,
-								);
-	my %dicefunction		=	(	match		=> qr#$hilo\([\d\+]+\)#,
-									function	=> \&dice_function,
-								);
-	my %gtlt				=	(	match		=> qr#(?:(?:\([\d\+]+\))|(?:[\d\+\,]+))$gtlt\d+#,
-									function	=> \&gtlt,
-								);
-	my %adddice				=	(	match		=> qr#[\d\,]+#,
-									function	=> \&adddice,
-								);
-
-	my @subroutines = (\%recursiveroll,\%specialroll,\%diceroutine,\%dicefunction,\%gtlt,\%adddice);
-	
-	my $verbose = "";
-
-
-	croak "unexpected operators in dice expression" if $expression =~ /[^\=\<\>\{\}\ddrhl\(\)\-\+\*\/#]/;
-	$expression = expand_expression($expression);
-	until ($expression =~ /^\-?\d+$/)
-	{	
-		my ($batch, $temp);
-		$batch = $expression unless $expression =~ /\(/;
-
-		if ($expression =~ $deepestparens)
-			{
-				$batch = $1;
-				$batch = find_functions($expression, $batch);
-			}
-		$temp = sanitiser($batch);
-		while ($batch)
+	my $tree = shift;
+	if (ref ($tree))
+	{
+		$tree =  calculate($tree);
+	}
+	return $tree;
+}
+	 
+sub calculate
+{
+	my $node = shift;
+	my $lhs = evaluate($node->{lhs});
+	my $rhs = evaluate($node->{rhs});
+	for (@operators)
+	{
+		if ($node->{op} eq $_->{operator})
 		{
-			croak "taking too long" if time - $starttime > 1;
-			INNER: for (@subroutines)
-			{
-				if ($batch=~$_->{match})
-				{
-					my $operators = $&;
-					my $result= &{$_->{function}}($operators);
-					$operators = sanitiser($operators);
-					$batch =~ s/$operators/$result/;
-					last INNER;
-				}
-				else
-				{
-					while ($batch !~ /[\,\<\>\=\{\}dhlr#]/)
-					{$batch=eval($batch);last INNER}
-				}
-			}
-			last if $batch =~/^[\-\d+\+]+$/;
-		}
-			$expression =~ s/$temp/$batch/;
-		last if $expression =~ /^\-?\d+$/;
-		last if $expression =~/^\-?\d+$/;
-	}
-	my $output;
-	$output->{total} = $expression;
-	$output->{list} = $verbose;
-	$output->{standard} = "$output->{total}";
-	$output->{verbose} = "$output->{list}Total: $output->{total}";
-
-	return $output;
-
-}
-
-
-
-
-sub parse_operators
-{
-	my $expression = shift;
-	$expression =~ /(\d+)([dhl])(\d+)/;
-	return ($1, $3, $2);
-}
-
-sub sanitiser
-{
-	my $expression = shift;
-	$expression =~ s/[\=\<\>\.\(\)\+\?\*\{\}\[\]\|\\\^\$]/\\$&/g if $expression;
-	return $expression;
-}
-
-sub parse_roll
-{
-	my $expression = shift;
-	my ($dice, $sides, $op) = parse_operators($expression);
-	my @rolls = roll($dice, $sides)	if $op =~ /d/;
-	my $result = join(",",@rolls);
-	return $result;
-}
-
-
-sub expand_expression
-{
-	my $expression = shift;
-	my ($output, $match, $multiplier, $batch);
-	while ($expression =~ /#/)
-	{
-		if ($expression =~ /(([^\(\)]*?)#([^\(\)]*))/)
-		{
-			$multiplier = (parse_expression($2))->{total};
-			$match = ("(".$3.")");
-			$batch = $1;
-		}
-		elsif ($expression =~ /(($matchingparens)#([^\(\)]*))/)
-		{
-			$multiplier = (parse_expression($2))->{total};
-			$match = ("(".$3.")");
-			$batch = $1;
-		}
-		elsif ($expression =~ /(([^\(\)]*?)#($matchingparens))/)
-		{
-			$multiplier = (parse_expression($2))->{total};
-			$match = ("(".$3.")");
-			$batch = $1;
-		}
-		elsif ($expression =~ /(($matchingparens)#($matchingparens))/)
-		{
-			$multiplier = (parse_expression($2))->{total};
-			$match = ("(".$3.")");
-			$batch = $1;
-		}
-		$output = (($match."+")x($multiplier-1)).$match;
-		$batch = sanitiser($batch);
-		$expression =~ s/$batch/$output/;
-	}
-	return $expression;
-}
-
-sub special_roll
-{
-	my $expression = shift;
-	my $highlow;
-	$highlow = "h" if $expression =~ /h/;
-	$highlow = "l" if $expression =~ /l/;
-	my $number = parse_count($expression, $highlow);
-	my ($dice, $sides, $op) = parse_operators($expression);
-	my @result;
-	@result = keep_highest(roll($dice, $sides), $number) if $highlow eq "h";
-	@result = keep_lowest(roll($dice, $sides), $number) if $highlow eq "l";
-	my $result = join(",",@result);
-	return $result;
-}
-
-sub parse_count
-{
-	my $expression = shift;
-	my $x = shift;
-	my $number;
-	if ($expression =~ /\{/)
-	{
-		$expression =~ /\{(\d+)\}/;
-		$number = $1;
-	}
-	else
-	{
-		$number = ($expression =~ s/$x/$x/g);
-	}
-	return $number;
-}
-
-sub find_functions
-{
-	my $expression = shift;
-	my $batch = shift;
-	if ($batch =~ /^[\d\+d]+$/)
-	{
-		my $match = sanitiser($batch);
-		if ($expression =~ /($hilo\($match\))/)
-			{$batch = $1;}
-		elsif ($expression =~ /(\($match\)$gtlt\d+)/)
-			{$batch = $1;}
-		elsif ($expression =~ /($rprefix+\($match\))/)
-			{$batch = $1;}
-		elsif ($expression =~ /(\($match\))/)
-			{$batch = $1;}
-	}
-	return $batch;
-}
-
-sub dice_function
-{
-	my $expression = shift;
-	my $highlow;
-	my $result;
-	$highlow = "h" if $expression =~ /h/;
-	$highlow = "l" if $expression =~ /l/;
-	my $number = parse_count($expression, $highlow);
-	$expression =~ /\(([\d\+]+)\)/;
-	my @args = split(/[\,\+]/,$1);
-	if ($number < @args)
-	{
-		my @result;
-		@result = keep_highest(@args, $number) if $highlow eq "h";
-		@result = keep_lowest(@args, $number) if $highlow eq "l";
-		$result = join(",",@result);
-	}
-	else
-		{$result = $1}
-	return $result;
-}
-
-
-sub gtlt
-{
-	my $expression = shift;
-	my $inclusive;
-	my $result;
-	my $dice;
-	$inclusive = 1 if $expression =~ /\=/;
-	$expression =~ /(\d+)$/;
-	my $number = $1;
-	if ($expression =~ /^\(([\d\+]+)\)/)
-		{$dice = $1;}
-	if ($expression =~ /^([\d\+]+)/)
-		{$dice = $1;}
-	my @args = split(/[\,\+]/,$dice);
-	if ($inclusive)
-	{
-		if ($expression =~ /\>/)
-			{$result = grep {$_>=$number} @args;}
-		elsif ($expression =~ /\</)
-			{$result = grep {$_<=$number} @args;}
-		else
-			{$result = grep {$_==$number} @args;}
-	}
-	else
-	{
-		if ($expression =~ /\>/)
-			{$result = grep {$_>$number} @args;}
-		elsif ($expression =~ /\</)
-			{$result = grep {$_<$number} @args;}
-	}
-	return $result;
-}
-
-sub parse_recursion
-{
-	my $expression = shift;
-	my ($threshold, $dice, $sides, $sign, $count, @result, $result);
-	while ($expression =~ /r/)
-	{
-		if ($expression =~ /(?:(\d+)?([\+\-])?(?:\{(\d+)\})?)?r\((\d+)d(\d+)\)/)
-		{
-			my $batch = $&;
-			$dice = $4;	$sides = $5;
-			if ($1)
-			{$threshold = $1}
-			else
-			{$threshold = $sides}
-			$sign = $2;
-			$count = $3;
-			if ($sign)
-			{
-				$sign = "-1" if $sign eq "-";
-				$sign = "1" if $sign eq "+";
-			}
-			$sign ||= 0; $count ||= 0;
-			@result = recursive_rolling($dice,$sides,$threshold,$sign,$count);
-			$result = join(",",@result);
-			$batch = sanitiser($batch);
-			$expression =~ s/$batch/$result/;
-		}
-
-		elsif ($expression =~ /(?:(\d+)?([\+\-])?(?:\{(\d+)\})?)?r\(?([\d\+]+)\)?/)
-		{
-			my $batch = $&;
-			my @existingdice = split(/[\,\+]/,$4);
-			if ($1)
-				{$threshold = $1}
-			else
-				{$threshold = $sides}
-			$sign = $2;
-			$count = $3;
-			if ($sign)
-			{
-				$sign = "-1" if $sign eq "-";
-				$sign = "1" if $sign eq "+";
-			}
-			if ($sign == -1)
-				{$dice = grep {$_ <= $threshold} @existingdice;}
-			elsif ($sign == 0)
-				{$dice = grep {$_ == $threshold} @existingdice;}
-			elsif ($sign == 1)
-				{$dice = grep {$_ >= $threshold} @existingdice;}
-			$sign ||= 0; $count ||= 0;
-			@result = recursive_rolling($dice,$sides,$threshold,$sign,$count);
-			$result = join(",",@result);
-			$result .= $4;
-			$batch = sanitiser($batch);
-			$expression =~ s/$batch/$result/;
+			return &{$_->{function}}($lhs,$rhs);
 		}
 	}
-	return $expression;
+	croak "encountered unknown operator";
 }
+  
 
 
-sub adddice
+sub add
 {
-	my $expression = shift;
-	$expression =~ s/\,/+/g;
-	return $expression;
+	my $lhs = shift;
+	my $rhs = shift;
+	return ($lhs + $rhs);
 }
-sub group_dice
+
+sub subtract
 {
-	my $expression = shift;
-	$expression =~ s/(\d+d\d+)/($1)/g;
-	return $expression;
+	my $lhs = shift;
+	my $rhs = shift;
+	return ($lhs - $rhs);
+}
+
+sub divide
+{
+	my $lhs = shift;
+	my $rhs = shift;
+	return (int ($lhs / $rhs));
+}
+
+sub multiply
+{
+	my $lhs = shift;
+	my $rhs = shift;
+	return ($lhs * $rhs);
+}
+
+sub dice
+{
+	my $lhs = shift;
+	my $rhs = shift;
+	return ($lhs * $rhs);
 }
