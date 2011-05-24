@@ -10,8 +10,10 @@ use strict;
 use Dicebag::Brain;
 use Parse::RecDescent;
 
+my $debug = 0;
+
 $::RD_ERRORS = 1; $::RD_WARN = 1; $::RD_HINT = 1; # warnings, etc. for RecDescent
-$::RD_TRACE = 1;
+$::RD_TRACE = $debug;
 
 my ($deepestparens, $matchingparens);
 $deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;		# regexp to find deepest brackets in expression
@@ -34,23 +36,25 @@ my $number = qr#\-?\d+#;						# regexpt to find numbers
 
 my $grammar = q!
 
-rule		: high_low
+rule		: sum
 
 MULTIPLICATION	: /[\*\/]/
 
 ADDITION	: /[\+\-]/
 
-INTEGER		: /-?\d+/
+INTEGER		: /\d+/
 		{ $item[1] }
+
 
 DICE		: "d" | "D"
 
-value		: INTEGER
+positive	: INTEGER
 		{ $item[1] }
 		| "(" sum ")"
 		{ $item[2] }
 
-roll		: <leftop: value DICE value>
+
+roll		: <leftop: positive DICE positive>
 		{
 			my $lhs = shift @{$item[1]};
 			while (@{$item[1]})
@@ -68,7 +72,21 @@ roll		: <leftop: value DICE value>
 			$lhs;
 		}
 
-product		: <leftop: roll MULTIPLICATION roll>
+g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
+		{
+			my $string = join('',@item[1..$#item]);
+			my $total = eval("$string");
+			$total ||= 0;
+		}
+		| roll
+		{ @item[1] }
+
+value           : g_l_than
+		{ $item[1] }
+		| "-" g_l_than
+		{ ($item[2]*-1) }
+
+product		: <leftop: value MULTIPLICATION value>
 		{
 			my $total =  eval("@{$item[1]}");
 		}
@@ -83,24 +101,13 @@ sub parse_expression
 {
 	my $parser = Parse::RecDescent->new($grammar);
 	my $expression = shift;
-	$expression =~ s/\s//g; 							# remove whitespace from dice expression
-		$expression =~ s/\d(?=\()/$&*/g;					# lazy way to do implied multiplication
+	$expression =~ s/\s//g; 					# remove whitespace from dice expression
+		$expression =~ s/\d(?=\()/$&*/g;			# lazy way to do implied multiplication
 		my $fail = find_expression_errors($expression);
 	croak "$fail" if $fail;
 
-#print ($parser->startrule($expression));
-
 	my $result = $parser->rule($expression);
-	if ($result)
-	{
-		return $result;
-	}
-	else
-	{
-		croak "bad parse\n";
-		return 0;
-	}
-	return 1;
+	return $result;
 }
 
 sub find_expression_errors
