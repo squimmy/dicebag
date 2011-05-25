@@ -14,7 +14,7 @@ use Data::Dumper;
 my $debug = 1;
 
 $::RD_ERRORS = 1; $::RD_WARN = 1; $::RD_HINT = 1; # warnings, etc. for RecDescent
-$::RD_TRACE = $debug;
+#$::RD_TRACE = $debug;
 
 my ($deepestparens, $matchingparens);
 $deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;		# regexp to find deepest brackets in expression
@@ -37,8 +37,8 @@ my $number = qr#\-?\d+#;						# regexpt to find numbers
 
 my $grammar = q!
 
-rule		: sum
-		{ Dicebag::Parser::convert_dice_to_number($item[1]) }
+rule		: sum #/^\Z/
+		{ print(Data::Dumper::Dumper(@item)); Dicebag::Parser::convert_dice_to_number($item[1]) }
 		| <error>
 
 MULTIPLICATION	: /[\*\/]/
@@ -48,24 +48,24 @@ ADDITION	: /[\+\-]/
 		| <error>
 
 INTEGER		: /\d+/
-		{ $item[1] }
+		{ print(Data::Dumper::Dumper(@item)); $item[1] }
 		| <error>
 
 
 DICE		: "d" | "D"
 		| <error>
 
-positive	: INTEGER
-		{ $item[1] }
-		| "(" sum ")"
-		{ $item[2] }
+positive	: "(" sum ")"
+		{ print(Data::Dumper::Dumper(@item)); $item[2] }
 		| "[" sum "]"
-		{ Dicebag::Parser::convert_dice_to_number($item[2]) }
+		{ print(Data::Dumper::Dumper(@item)); Dicebag::Parser::convert_dice_to_number($item[2]) }
+		| INTEGER
+		{ print(Data::Dumper::Dumper(@item)); $item[1] }
 		| <error>
 
 
 roll		: <leftop: positive DICE positive>
-		{ 
+		{  print(Data::Dumper::Dumper(@item));
 			my $lhs = shift @{$item[1]};
 			while (@{$item[1]})
 			{
@@ -75,7 +75,7 @@ roll		: <leftop: positive DICE positive>
 				$rhs = Dicebag::Parser::convert_dice_to_number($rhs);
 				if ($op eq 'd' || $op eq 'D')
 				{
-					my @dice = Dicebag::Brain::roll($lhs,$rhs);
+					my @dice = ($rhs, Dicebag::Brain::roll($lhs,$rhs));
 					$lhs = \@dice;
 				}
 			}
@@ -84,13 +84,13 @@ roll		: <leftop: positive DICE positive>
 		| <error>
 
 g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
-		{
+		{ print(Data::Dumper::Dumper(@item));
 			my $total = 0;
 			if (ref $item[1])
 			{
-				for (@{$item[1]})
+				for (1 .. $#{$item[1]})
 				{
-					$total ++ if eval("$_ $item[2] $item[3]");
+					$total ++ if eval("${$item[1]}[$_] $item[2] $item[3]");
 				}
 			}
 			else
@@ -102,22 +102,20 @@ g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
 			return $total;
 		}
 		| roll
-		{ @item[1] }
+		{ print(Data::Dumper::Dumper(@item)); @item[1] }
 		| <error>
 
 value           : g_l_than
-		{ $item[1] }
+		{ print(Data::Dumper::Dumper(@item)); $item[1] }
 		| "-" g_l_than
-		{
+		{ print(Data::Dumper::Dumper(@item));
 			$item[2] = Dicebag::Parser::convert_dice_to_number($item[2]);
 			$item[2]*-1;
 		}
 		| <error>
 
-product		: value
-		{ $item[1] }
-		|<leftop: value MULTIPLICATION value>
-		{
+product		: <leftop: value MULTIPLICATION value>
+		{ print(Data::Dumper::Dumper(@item));
 			for (@{$item[1]})
 			{
 				$_ = Dicebag::Parser::convert_dice_to_number($_);
@@ -125,18 +123,19 @@ product		: value
 			my $total =  eval("@{$item[1]}");
 		}
 		| value
+		{ print(Data::Dumper::Dumper(@item)); $item[1] }
 		| <error>
 
-sum		: product
-		{ $item[1] }
-		| <leftop: product ADDITION product>
-		{
+sum		: <leftop: product ADDITION product>
+		{ print(Data::Dumper::Dumper(@item));
 			for (@{$item[1]})
 			{
 				$_ = Dicebag::Parser::convert_dice_to_number($_);
 			}
 			my $total =  eval("@{$item[1]}");
 		}
+		| product
+		{ print(Data::Dumper::Dumper(@item)); $item[1] }
 		| <error>
 !;
 
@@ -146,7 +145,10 @@ sub convert_dice_to_number
 	if (ref $value)
 	{
 		my $total = 0;
-		$total += $_ for (@{$value});
+		for (1 .. $#{$value})
+		{
+			$total += ${$value}[$_];
+		}
 		return $total;
 	}
 	else
