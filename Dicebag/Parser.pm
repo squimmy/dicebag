@@ -9,11 +9,12 @@ require Exporter;
 use strict;
 use Dicebag::Brain;
 use Parse::RecDescent;
+use Data::Dumper;
 
 my $debug = 0;
 
 $::RD_ERRORS = 1; $::RD_WARN = 1; $::RD_HINT = 1; # warnings, etc. for RecDescent
-$::RD_TRACE = $debug;
+#$::RD_TRACE = $debug;
 
 my ($deepestparens, $matchingparens);
 $deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;		# regexp to find deepest brackets in expression
@@ -59,14 +60,14 @@ roll		: <leftop: positive DICE positive>
 			my $lhs = shift @{$item[1]};
 			while (@{$item[1]})
 			{
+				$lhs = Dicebag::Parser::convert_dice_to_number($lhs);
 				my $op = shift @{$item[1]};
 				my $rhs = shift @{$item[1]};
+				$rhs = Dicebag::Parser::convert_dice_to_number($rhs);
 				if ($op eq 'd' || $op eq 'D')
 				{
-					my $total = 0;
 					my @dice = Dicebag::Brain::roll($lhs,$rhs);
-					$total += $_ for @dice;
-					$lhs = $total;
+					$lhs = \@dice;
 				}
 			}
 			$lhs;
@@ -74,9 +75,21 @@ roll		: <leftop: positive DICE positive>
 
 g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
 		{
-			my $string = join('',@item[1..$#item]);
-			my $total = eval("$string");
-			$total ||= 0;
+			my $total = 0;
+			if (ref $item[1])
+			{
+				for (@{$item[1]})
+				{
+					$total ++ if eval("$_ $item[2] $item[3]");
+				}
+			}
+			else
+			{
+				my $string = join('',@item[1..$#item]);
+				$total = eval("$string");
+				$total ||= 0;
+			}
+			return $total;
 		}
 		| roll
 		{ @item[1] }
@@ -84,18 +97,44 @@ g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
 value           : g_l_than
 		{ $item[1] }
 		| "-" g_l_than
-		{ ($item[2]*-1) }
+		{
+			$item[2] = Dicebag::Parser::convert_dice_to_number($item[2]);
+			$item[2]*-1;
+		}
 
 product		: <leftop: value MULTIPLICATION value>
 		{
+			for (@{$item[1]})
+			{
+				$_ = Dicebag::Parser::convert_dice_to_number($_);
+			}
 			my $total =  eval("@{$item[1]}");
 		}
 
 sum		: <leftop: product ADDITION product>
 		{
+			for (@{$item[1]})
+			{
+				$_ = Dicebag::Parser::convert_dice_to_number($_);
+			}
 			my $total =  eval("@{$item[1]}");
 		}
 !;
+
+sub convert_dice_to_number
+{
+	my $value = shift;
+	if (ref $value)
+	{
+		my $total = 0;
+		$total += $_ for (@{$value});
+		return $total;
+	}
+	else
+	{
+		return $value;
+	}
+}
 
 sub parse_expression
 {
