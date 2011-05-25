@@ -38,7 +38,7 @@ my $number = qr#\-?\d+#;						# regexpt to find numbers
 my $grammar = q!
 
 rule		: sum #/^\Z/
-		{ print(Data::Dumper::Dumper(@item)); Dicebag::Parser::convert_dice_to_number($item[1]) }
+		{ Dicebag::Parser::convert_dice_to_number($item[1]) }
 		| <error>
 
 MULTIPLICATION	: /[\*\/]/
@@ -48,24 +48,26 @@ ADDITION	: /[\+\-]/
 		| <error>
 
 INTEGER		: /\d+/
-		{ print(Data::Dumper::Dumper(@item)); $item[1] }
+		{ $item[1] }
 		| <error>
 
 
 DICE		: "d" | "D"
 		| <error>
 
-positive	: "(" sum ")"
-		{ print(Data::Dumper::Dumper(@item)); $item[2] }
+positive	: "(" roll ")"
+		{ $item[2] }
+		| "(" sum ")"
+		{ $item[2] }
 		| "[" sum "]"
-		{ print(Data::Dumper::Dumper(@item)); Dicebag::Parser::convert_dice_to_number($item[2]) }
+		{ Dicebag::Parser::convert_dice_to_number($item[2]) }
 		| INTEGER
-		{ print(Data::Dumper::Dumper(@item)); $item[1] }
+		{ $item[1] }
 		| <error>
 
 
 roll		: <leftop: positive DICE positive>
-		{  print(Data::Dumper::Dumper(@item));
+		{ 
 			my $lhs = shift @{$item[1]};
 			while (@{$item[1]})
 			{
@@ -84,7 +86,7 @@ roll		: <leftop: positive DICE positive>
 		| <error>
 
 g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
-		{ print(Data::Dumper::Dumper(@item));
+		{
 			my $total = 0;
 			if (ref $item[1])
 			{
@@ -102,40 +104,36 @@ g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
 			return $total;
 		}
 		| roll
-		{ print(Data::Dumper::Dumper(@item)); @item[1] }
+		{ @item[1] }
 		| <error>
 
 value           : g_l_than
-		{ print(Data::Dumper::Dumper(@item)); $item[1] }
+		{ $item[1] }
 		| "-" g_l_than
-		{ print(Data::Dumper::Dumper(@item));
+		{
 			$item[2] = Dicebag::Parser::convert_dice_to_number($item[2]);
 			$item[2]*-1;
 		}
 		| <error>
 
 product		: <leftop: value MULTIPLICATION value>
-		{ print(Data::Dumper::Dumper(@item));
+		{
 			for (@{$item[1]})
 			{
 				$_ = Dicebag::Parser::convert_dice_to_number($_);
 			}
 			my $total =  eval("@{$item[1]}");
 		}
-		| value
-		{ print(Data::Dumper::Dumper(@item)); $item[1] }
 		| <error>
 
 sum		: <leftop: product ADDITION product>
-		{ print(Data::Dumper::Dumper(@item));
+		{
 			for (@{$item[1]})
 			{
 				$_ = Dicebag::Parser::convert_dice_to_number($_);
 			}
 			my $total =  eval("@{$item[1]}");
 		}
-		| product
-		{ print(Data::Dumper::Dumper(@item)); $item[1] }
 		| <error>
 !;
 
