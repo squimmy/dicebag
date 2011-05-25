@@ -11,10 +11,10 @@ use Dicebag::Brain;
 use Parse::RecDescent;
 use Data::Dumper;
 
-my $debug = 0;
+my $debug = 1;
 
 $::RD_ERRORS = 1; $::RD_WARN = 1; $::RD_HINT = 1; # warnings, etc. for RecDescent
-#$::RD_TRACE = $debug;
+$::RD_TRACE = $debug;
 
 my ($deepestparens, $matchingparens);
 $deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;		# regexp to find deepest brackets in expression
@@ -38,25 +38,34 @@ my $number = qr#\-?\d+#;						# regexpt to find numbers
 my $grammar = q!
 
 rule		: sum
+		{ Dicebag::Parser::convert_dice_to_number($item[1]) }
+		| <error>
 
 MULTIPLICATION	: /[\*\/]/
+		| <error>
 
 ADDITION	: /[\+\-]/
+		| <error>
 
 INTEGER		: /\d+/
 		{ $item[1] }
+		| <error>
 
 
 DICE		: "d" | "D"
+		| <error>
 
 positive	: INTEGER
 		{ $item[1] }
 		| "(" sum ")"
 		{ $item[2] }
+		| "[" sum "]"
+		{ Dicebag::Parser::convert_dice_to_number($item[2]) }
+		| <error>
 
 
 roll		: <leftop: positive DICE positive>
-		{
+		{ 
 			my $lhs = shift @{$item[1]};
 			while (@{$item[1]})
 			{
@@ -72,6 +81,7 @@ roll		: <leftop: positive DICE positive>
 			}
 			$lhs;
 		}
+		| <error>
 
 g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
 		{
@@ -93,6 +103,7 @@ g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
 		}
 		| roll
 		{ @item[1] }
+		| <error>
 
 value           : g_l_than
 		{ $item[1] }
@@ -101,8 +112,11 @@ value           : g_l_than
 			$item[2] = Dicebag::Parser::convert_dice_to_number($item[2]);
 			$item[2]*-1;
 		}
+		| <error>
 
-product		: <leftop: value MULTIPLICATION value>
+product		: value
+		{ $item[1] }
+		|<leftop: value MULTIPLICATION value>
 		{
 			for (@{$item[1]})
 			{
@@ -110,8 +124,12 @@ product		: <leftop: value MULTIPLICATION value>
 			}
 			my $total =  eval("@{$item[1]}");
 		}
+		| value
+		| <error>
 
-sum		: <leftop: product ADDITION product>
+sum		: product
+		{ $item[1] }
+		| <leftop: product ADDITION product>
 		{
 			for (@{$item[1]})
 			{
@@ -119,6 +137,7 @@ sum		: <leftop: product ADDITION product>
 			}
 			my $total =  eval("@{$item[1]}");
 		}
+		| <error>
 !;
 
 sub convert_dice_to_number
@@ -156,7 +175,7 @@ sub find_expression_errors
 	$fail = "unmatched parentheses" unless check_parens($expression);
 	$fail = "unmatched braces" unless check_braces($expression);
 	$fail = "empty string" unless $expression =~ /\d/;
-	$fail = "unrecognised character" if $expression =~ /[^\=\<\>\(\)\d\-\+\/\*hldr\{\}]/;
+	$fail = "unrecognised character" if $expression =~ /[^\=\<\>\[\]\(\)\d\-\+\/\*hldr\{\}]/;
 	$fail = "dice operator preceeded by non-numeric value" if $expression =~ /[\(rhld\+\-\*\/\{]d/;
 	$fail = "infinite recurisive rolling likely" if $expression =~/(?:[^\d]|^)1\+r/;
 	return $fail;
