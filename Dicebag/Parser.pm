@@ -123,6 +123,44 @@ recursive	: positive(?) "r" "{" (roll | positive) ("<=" | ">=" | "==" | "=" | ">
 			$item[4];
 		}
 		| positive(?) "c" "{" positive ("<=" | ">=" | "==" | "=" | ">" | "<") positive "}"
+		{ print(Data::Dumper::Dumper(@item));
+			if ($item[5] eq "=")
+			{
+				$item[5] = "==";
+			}
+			my $sign;
+			my $threshold = $item[6];
+			my $count = $item[1];
+			if ($item[5] =~ /</)
+			{
+				$sign = -1;
+			}
+			elsif ($item[5] =~ />/)
+			{
+				$sign = 1;
+			}
+			else
+			{
+				$sign = 0;
+			}
+			if ($item[5] \!~ /=/)
+			{
+				$threshold += $sign;
+			}
+			for (1 .. $#{$item[4]})
+			{
+				my @dice;
+				if (eval("${$item[4]}[$_] $item[5] $item[6]"))
+				{
+					@dice = Dicebag::Brain::recursive_rolling(1, ${$item[4]}[0], $threshold, $sign, $count);
+					for (my $roll = @dice)
+					{
+						${$item[4]}[$_] += $roll;
+					}
+				}
+			}
+			$item[4];
+		}
 		| roll
 		
 
