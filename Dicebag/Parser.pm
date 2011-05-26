@@ -35,10 +35,11 @@ my $number = qr#\-?\d+#;						# regexpt to find numbers
 
 
 
+
 my $grammar = q!
 
 rule		: sum #/^\Z/
-		{ Dicebag::Parser::convert_dice_to_number($item[1]) }
+		{print(Data::Dumper::Dumper(@item)); Dicebag::Parser::convert_dice_to_number($item[1]) }
 		| <error>
 
 MULTIPLICATION	: /[\*\/]/
@@ -48,7 +49,7 @@ ADDITION	: /[\+\-]/
 		| <error>
 
 INTEGER		: /\d+/
-		{ $item[1] }
+		{print(Data::Dumper::Dumper(@item)); $item[1] }
 		| <error>
 
 
@@ -56,18 +57,18 @@ DICE		: "d" | "D"
 		| <error>
 
 positive	: "(" roll ")"
-		{ $item[2] }
+		{print(Data::Dumper::Dumper(@item)); $item[2] }
 		| "(" sum ")"
-		{ $item[2] }
+		{print(Data::Dumper::Dumper(@item)); $item[2] }
 		| "[" sum "]"
-		{ Dicebag::Parser::convert_dice_to_number($item[2]) }
+		{print(Data::Dumper::Dumper(@item)); Dicebag::Parser::convert_dice_to_number($item[2]) }
 		| INTEGER
-		{ $item[1] }
+		{print(Data::Dumper::Dumper(@item)); $item[1] }
 		| <error>
 
 
 roll		: <leftop: positive DICE positive>
-		{ 
+		{print(Data::Dumper::Dumper(@item)); 
 			my $lhs = shift @{$item[1]};
 			while (@{$item[1]})
 			{
@@ -85,9 +86,53 @@ roll		: <leftop: positive DICE positive>
 		}
 		| <error>
 
-g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
-		{
+recursive	: positive(?) "r" "{" (roll | positive) ("<=" | ">=" | "==" | "=" | ">" | "<") positive "}"
+		{ print(Data::Dumper::Dumper(@item));
+			if ($item[5] eq "=")
+			{
+				$item[5] = "==";
+			}
+			my $sign;
+			my $threshold = $item[6];
+			my $count = $item[1];
+			if ($item[5] =~ /</)
+			{
+				$sign = -1;
+			}
+			elsif ($item[5] =~ />/)
+			{
+				$sign = 1;
+			}
+			else
+			{
+				$sign = 0;
+			}
+			if ($item[5] \!~ /=/)
+			{
+				$threshold += $sign;
+			}
+			my $dice = 0;
+			for (1 .. $#{$item[4]})
+			{
+				$dice ++ if eval("${$item[4]}[$_] $item[5] $item[6]");
+			}
+			if ($dice)
+			{
+				push @{$item[4]}, Dicebag::Brain::recursive_rolling($#{$item[4]}, ${$item[4]}[0], $threshold, $sign, $count);
+			}
+			$item[4];
+		}
+		| positive(?) "c" "{" positive ("<=" | ">=" | "==" | "=" | ">" | "<") positive "}"
+		| roll
+		
+
+g_l_than	: recursive ("<=" | ">=" | "==" | "=" | ">" | "<") recursive
+		{print(Data::Dumper::Dumper(@item));
 			my $total = 0;
+			if ($item[2] eq "=")
+			{
+				$item[2] = "==";
+			}
 			if (ref $item[1])
 			{
 				for (1 .. $#{$item[1]})
@@ -103,21 +148,21 @@ g_l_than	: roll ("<=" | ">=" | "=" | ">" | "<") roll
 			}
 			return $total;
 		}
-		| roll
-		{ @item[1] }
+		| recursive
+		{print(Data::Dumper::Dumper(@item)); @item[1] }
 		| <error>
 
 value           : g_l_than
-		{ $item[1] }
+		{print(Data::Dumper::Dumper(@item)); $item[1] }
 		| "-" g_l_than
-		{
+		{print(Data::Dumper::Dumper(@item));
 			$item[2] = Dicebag::Parser::convert_dice_to_number($item[2]);
 			$item[2]*-1;
 		}
 		| <error>
 
 product		: <leftop: value MULTIPLICATION value>
-		{
+		{print(Data::Dumper::Dumper(@item));
 			for (@{$item[1]})
 			{
 				$_ = Dicebag::Parser::convert_dice_to_number($_);
@@ -127,7 +172,7 @@ product		: <leftop: value MULTIPLICATION value>
 		| <error>
 
 sum		: <leftop: product ADDITION product>
-		{
+		{print(Data::Dumper::Dumper(@item));
 			for (@{$item[1]})
 			{
 				$_ = Dicebag::Parser::convert_dice_to_number($_);
@@ -136,6 +181,8 @@ sum		: <leftop: product ADDITION product>
 		}
 		| <error>
 !;
+
+
 
 sub convert_dice_to_number
 {
@@ -157,16 +204,17 @@ sub convert_dice_to_number
 
 sub parse_expression
 {
-	my $parser = Parse::RecDescent->new($grammar);
 	my $expression = shift;
 	$expression =~ s/\s//g; 					# remove whitespace from dice expression
-		$expression =~ s/\d(?=\()/$&*/g;			# lazy way to do implied multiplication
-		my $fail = find_expression_errors($expression);
+	$expression =~ s/\d(?=\()/$&*/g;				# lazy way to do implied multiplication
+	print "expression is now: $expression\n";
+	my $fail = find_expression_errors($expression);
 	croak "$fail" if $fail;
-
+	my $parser = Parse::RecDescent->new($grammar);
 	my $result = $parser->rule($expression);
 	return $result;
 }
+
 
 sub find_expression_errors
 {
@@ -175,7 +223,7 @@ sub find_expression_errors
 	$fail = "unmatched parentheses" unless check_parens($expression);
 	$fail = "unmatched braces" unless check_braces($expression);
 	$fail = "empty string" unless $expression =~ /\d/;
-	$fail = "unrecognised character" if $expression =~ /[^\=\<\>\[\]\(\)\d\-\+\/\*hldr\{\}]/;
+	$fail = "unrecognised character" if $expression =~ /[^#\=\<\>\[\]\(\)\d\-\+\/\*hldr\{\}]/;
 	$fail = "dice operator preceeded by non-numeric value" if $expression =~ /[\(rhld\+\-\*\/\{]d/;
 	$fail = "infinite recurisive rolling likely" if $expression =~/(?:[^\d]|^)1\+r/;
 	return $fail;
