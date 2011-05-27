@@ -86,7 +86,7 @@ roll		: <leftop: positive DICE positive>
 		}
 		| <error>
 
-recursive	: positive(?) "r" "{" (roll | positive) ("<=" | ">=" | "==" | "=" | ">" | "<") positive "}"
+recursive	: positive(?) ("r" | "c") "{" (roll | positive) ("<=" | ">=" | "==" | "=" | ">" | "<") positive "}"
 		{ print(Data::Dumper::Dumper(@item));
 			if ($item[5] eq "=")
 			{
@@ -111,60 +111,63 @@ recursive	: positive(?) "r" "{" (roll | positive) ("<=" | ">=" | "==" | "=" | ">
 			{
 				$threshold += $sign;
 			}
-			my $dice = 0;
-			for (1 .. $#{$item[4]})
+			if ($item[2] eq "r")
 			{
-				$dice ++ if eval("${$item[4]}[$_] $item[5] $item[6]");
-			}
-			if ($dice)
-			{
-				push @{$item[4]}, Dicebag::Brain::recursive_rolling($#{$item[4]}, ${$item[4]}[0], $threshold, $sign, $count);
-			}
-			$item[4];
-		}
-		| positive(?) "c" "{" positive ("<=" | ">=" | "==" | "=" | ">" | "<") positive "}"
-		{ print(Data::Dumper::Dumper(@item));
-			if ($item[5] eq "=")
-			{
-				$item[5] = "==";
-			}
-			my $sign;
-			my $threshold = $item[6];
-			my $count = $item[1];
-			if ($item[5] =~ /</)
-			{
-				$sign = -1;
-			}
-			elsif ($item[5] =~ />/)
-			{
-				$sign = 1;
-			}
-			else
-			{
-				$sign = 0;
-			}
-			if ($item[5] \!~ /=/)
-			{
-				$threshold += $sign;
-			}
-			for (1 .. $#{$item[4]})
-			{
-				my @dice;
-				if (eval("${$item[4]}[$_] $item[5] $item[6]"))
+				my $dice = 0;
+				for (1 .. $#{$item[4]})
 				{
-					@dice = Dicebag::Brain::recursive_rolling(1, ${$item[4]}[0], $threshold, $sign, $count);
-					for (my $roll = @dice)
+					$dice ++ if eval("${$item[4]}[$_] $item[5] $item[6]");
+				}
+				if ($dice)
+				{
+					push @{$item[4]}, Dicebag::Brain::recursive_rolling($#{$item[4]}, ${$item[4]}[0], $threshold, $sign, $count);
+				}
+				return $item[4];
+			}
+			else
+			{
+				for (1 .. $#{$item[4]})
+				{
+					my @dice;
+					if (eval("${$item[4]}[$_] $item[5] $item[6]"))
 					{
-						${$item[4]}[$_] += $roll;
+						@dice = Dicebag::Brain::recursive_rolling(1, ${$item[4]}[0], $threshold, $sign, $count);
+						for (my $roll = @dice)
+						{
+							${$item[4]}[$_] += $roll;
+						}
 					}
 				}
+				return $item[4];
 			}
-			$item[4];
 		}
 		| roll
-		
 
-g_l_than	: recursive ("<=" | ">=" | "==" | "=" | ">" | "<") recursive
+
+high_low	: positive(?) ("h" | "l") (recursive | positive)
+		{print(Data::Dumper::Dumper(@item));
+
+			my $count = ${$item[1]}[0];
+			$count ||= 1;
+			my @dice = @{$item[3]}[1 .. $#{$item[3]}];
+			print "\@dice is @dice\n";
+			print "\$count is $count\n";
+
+			if ($item[2] eq "h")
+			{
+				@dice = Dicebag::Brain::keep_highest(@dice, $count);
+			}
+			else
+			{
+				@dice = Dicebag::Brain::keep_lowest(@dice, $count);
+			}
+
+			return [${$item[3]}[0], @dice];
+		}
+		| recursive
+
+
+g_l_than	: high_low ("<=" | ">=" | "==" | "=" | ">" | "<") high_low
 		{print(Data::Dumper::Dumper(@item));
 			my $total = 0;
 			if ($item[2] eq "=")
@@ -186,7 +189,7 @@ g_l_than	: recursive ("<=" | ">=" | "==" | "=" | ">" | "<") recursive
 			}
 			return $total;
 		}
-		| recursive
+		| high_low
 		{print(Data::Dumper::Dumper(@item)); @item[1] }
 		| <error>
 
@@ -261,7 +264,7 @@ sub find_expression_errors
 	$fail = "unmatched parentheses" unless check_parens($expression);
 	$fail = "unmatched braces" unless check_braces($expression);
 	$fail = "empty string" unless $expression =~ /\d/;
-	$fail = "unrecognised character" if $expression =~ /[^#\=\<\>\[\]\(\)\d\-\+\/\*hldr\{\}]/;
+	$fail = "unrecognised character" if $expression =~ /[^#\=\<\>\[\]\(\)\d\-\+\/\*hldrc\{\}]/;
 	$fail = "dice operator preceeded by non-numeric value" if $expression =~ /[\(rhld\+\-\*\/\{]d/;
 	$fail = "infinite recurisive rolling likely" if $expression =~/(?:[^\d]|^)1\+r/;
 	return $fail;
