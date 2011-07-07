@@ -245,7 +245,7 @@ sub dice
 sub reroll_dice
 # performs recursive and cumulative rerolling
 # expressions are in the form:
-# "number","r/c","{","dice expression", "comparison exression", "}"
+# number, r/c, {, dice expression, comparison exression, }
 {
 	my $value = shift;
 	my @array = @$value;
@@ -455,15 +455,28 @@ sub sum
 		$_ = check_value($_);
 	}
 
-	for (@array)
+	my $lhs = shift @array;
+	while ($array[0])
 	{
-		$_ = convert_dice_to_number($_);
+		print "calculating sums...\n";
+
+		my $op = shift @array;
+		my $rhs = shift @array;
+		$rhs = convert_dice_to_number($rhs);
+		if (ref $lhs)
+		{
+			for (1 .. $#{$lhs})
+			{
+				$lhs->[$_] = eval("$lhs->[$_] $op $rhs");
+			}
+		}
+		else
+		{
+			$lhs = eval("$lhs $op $rhs");
+		}
 	}
 
-	# The evaluator can do all the sums for us!
-	my $total = eval("@array");
-
-	return $total;
+	return $lhs;
 }
 
 
