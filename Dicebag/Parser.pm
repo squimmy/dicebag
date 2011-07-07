@@ -1,5 +1,11 @@
 package Dicebag::Parser;
 
+#############################################
+#                                           #
+#  Module to create parse trees from input  #
+#                                           #
+#############################################
+
 use warnings;
 use Carp;
 require Exporter;
@@ -9,34 +15,25 @@ require Exporter;
 use strict;
 use Dicebag::Brain;
 use Parse::RecDescent;
-use Data::Dumper;
 use Dicebag::Evaluator;
 
-my $debug = 1;
+my $debug = undef;
 
-#$::RD_ERRORS = 1; $::RD_WARN = 1; $::RD_HINT = 1; # warnings, etc. for RecDescent
-#$::RD_TRACE = $debug;
+# warnings, etc. for RecDescent
+$::RD_ERRORS = 1;
+$::RD_WARN = $debug; $::RD_HINT = $debug;
+$::RD_TRACE = $debug;
 
-my ($deepestparens, $matchingparens);
-$deepestparens = qr#\(([^\(\)]+|(??{$deepestparens}))\)#;		# regexp to find deepest brackets in expression
-$matchingparens = qr#\((?:[^\(\)]|(??{$matchingparens}))*\)#;		# regexp to find matching brackets
-my $hilo = qr#(?:(?:h|l)\{\d+\})|(?:h+|l+)#;				# regexp to find high/low function
-my $rprefix = qr#(?:\d+?[\+\-]?(?:\{\d+\})?)?r#;			# regexp to find recursion prefix
-my $gtlt = qr#(?:[\<\>]?\=)|(?:[\<\>])#;				# regexp to find <,>,=,<= and >=
-my $operand = qr#(?:\-?\d+)|$matchingparens#;				# rexexp to find operands
-my $operator = qr#[\+\-\*\/\d]#;					# regexp to find operators
-my $rec_op = qr#r(?:{\d+})?#;						# regexp to find recursive roll operator
-my $token_operators = qr#[d\(\)\+\-\*\/]|$hilo|$gtlt|$rec_op#;		# regexp to find any/all tokens
-my $binary_operators = qr#[d\/\*\+\-]|$gtlt#;				# regexp to find binary operators
-my $unary_operators = qr#$hilo#;					# regexp to find unary operators
-my $number = qr#\-?\d+#;						# regexpt to find numbers
+# Regexps to check for parentheses
+my $parentheses_match = qr#([\(\)])#;
+my $bracket_match = qr#([\[\]])#;
+my $brace_match = qr#([\{\}])#;
 
 
 
 
 
-
-
+# Parse::RecDescent Grammar:
 my $grammar = q!
 <autoaction: { [@item] } >
 
@@ -77,10 +74,15 @@ sum		: <leftop: product ("+" | "-") product>
 !;
 
 sub parse_expression
+# Parsing is done here.
+# The Parser returns a parse tree, made of a reference to an array of terms.
+# The terms themselves may be references to an array of their sub-terms.
+# The result is then passed to Dicebag::Evaluator to be evaluated!
 {
 	my $expression = shift;
 	$expression =~ s/\s//g; 					# remove whitespace from dice expression
 	$expression =~ s/\d(?=\()/$&*/g;				# lazy way to do implied multiplication
+	$expression =~ s/(\))(\()/$1*$2/g;
 	my $fail = find_expression_errors($expression);
 	croak "$fail" if $fail;
 	my $parser = Parse::RecDescent->new($grammar);
@@ -91,11 +93,13 @@ sub parse_expression
 
 
 sub find_expression_errors
+# Basic Sanity check to find things like unmatched brackets or invalid characters.
 {
 	my $fail = 0;
 	my $expression = shift;
-	$fail = "unmatched parentheses" unless check_parens($expression);
-	$fail = "unmatched braces" unless check_braces($expression);
+	$fail = "unmatched parentheses" unless check_parens($expression, $parentheses_match, "(", ")");
+	$fail = "unmatched braces" unless check_parens($expression, $brace_match, "{", "}");
+	$fail = "unmatched brackets" unless check_parens($expression, $bracket_match, "[", "]");
 	$fail = "empty string" unless $expression =~ /\d/;
 	$fail = "unrecognised character" if $expression =~ /[^#\=\<\>\[\]\(\)\d\-\+\/\*hldrc\{\}]/;
 	$fail = "dice operator preceeded by non-numeric value" if $expression =~ /[\(rhld\+\-\*\/\{]d/;
@@ -107,25 +111,15 @@ sub find_expression_errors
 sub check_parens
 {
 	my $expression = shift;
-	my $count = 0;
-	while ($expression =~ /([\(\)])/g)
-	{
-		$count++ if $1 eq "(";
-		$count-- if $1 eq ")";
-		return 0 if $count<0;
-	}
-	return ($count==0)?1:0;
-}
+	my $match = shift;
+	my $open = shift;
+	my $close = shift;
 
-
-sub check_braces
-{
-	my $expression = shift;
 	my $count = 0;
-	while ($expression =~ /([\{\}])/g)
+	while ($expression =~ /$match/g)
 	{
-		$count++ if $1 eq "{";
-		$count-- if $1 eq "}";
+		$count++ if $1 eq "$open";
+		$count-- if $1 eq "$close";
 		return 0 if $count<0;
 	}
 	return ($count==0)?1:0;
