@@ -12,7 +12,6 @@ require Exporter;
 @ISA = (Exporter);
 @EXPORT = qw(evaluate_output);
 use Dicebag::Brain;
-use diagnostics;
 use strict;
 
 # Trees are in the form of an array of arrays.
@@ -205,7 +204,7 @@ sub positive
 
 	# we only need to check the type of brackets if the array
 	# contains more than one element
-	if ($array[1])
+	if (defined $array[1])
 	{
 		# parentheses simply return what they contain
 		if ($array[0] eq "(")
@@ -367,7 +366,6 @@ sub sum
 	{
 		$_ = check_value($_);
 	}
-
 	my $lhs = shift @array;
 	while ($array[0])
 	{
@@ -375,16 +373,20 @@ sub sum
 		my $op = shift @array;
 		my $rhs = shift @array;
 		$rhs = convert_dice_to_number($rhs);
+		if ($op eq "/" && $rhs == 0)
+		{
+			die "Can't divide by zero!";
+		}
 		if (ref $lhs)
 		{
 			for (1 .. $#{$lhs})
 			{
-				$lhs->[$_] = eval("$lhs->[$_] $op $rhs");
+				$lhs->[$_] = int(eval("$lhs->[$_] $op $rhs"));
 			}
 		}
 		else
 		{
-			$lhs = eval("$lhs $op $rhs");
+			$lhs = int(eval("$lhs $op $rhs"));
 		}
 	}
 
@@ -428,15 +430,14 @@ sub wordproduct
 		$_ = check_value($_);
 	}
 
-	if ($array[1])
+	if (defined $array[1])
 	{
 		my $lhs = $array[0];
 		my $rhs = $array[2];
-		$lhs = convert_dice_to_number($lhs);
+		$lhs = convert_dice_to_string($lhs);
 		$rhs = convert_dice_to_number($rhs);
 		return $lhs x $rhs;
 	}
-
 	return $array[0];
 }
 

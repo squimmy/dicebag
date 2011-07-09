@@ -1,4 +1,3 @@
-package Dicebag::Parser;
 
 #############################################
 #                                           #
@@ -38,36 +37,36 @@ my $brace_match = qr#([\{\}])#;
 my $grammar = q!
 <autoaction: { [@item] } >
 
-rule		: sum #/^\Z/
+rule			: sum #/^\Z/
 			| <error>
 
-positive	: "(" roll ")"
+positive		: "(" roll ")"
 			| "(" sum ")"
 			| "[" sum "]"
 			| /\d+/
 			| <error>
 
 
-roll		: <leftop: positive ("d" | "D") positive>
+roll			: <leftop: positive ("d" | "D") positive>
 			| <error>
 
-recursive	: positive(?) ("r" | "c") "{" (roll | positive) ("<=" | ">=" | "==" | "=" | ">" | "<") positive "}"
+recursive		: positive(?) ("r" | "c") "{" (roll | positive) ("<=" | ">=" | "==" | "=" | ">" | "<") positive "}"
 			| roll
 
 
-high_low	: positive(?) ("h" | "l") (recursive | positive)
+high_low		: positive(?) ("h" | "l") (recursive | positive)
 			| recursive
 
 
-g_l_than	: high_low ("<=" | ">=" | "==" | "=" | ">" | "<") high_low
+g_l_than		: high_low ("<=" | ">=" | "==" | "=" | ">" | "<") high_low
 			| high_low
 			| <error>
 
-value		: g_l_than
+value			: g_l_than
 			| "-" g_l_than
 			| <error>
 
-product		: <leftop: value ("*" | "/") value>
+product			: <leftop: value ("*" | "/") value>
 			| <error>
 
 sum			: <leftop: product ("+" | "-") product>
@@ -78,41 +77,41 @@ sum			: <leftop: product ("+" | "-") product>
 my $output_grammar = q!
 <autoaction: { [@item] } >
 
-rule		: wordsum #/^\Z/
+rule			: wordsum #/^\Z/
 			| <error>
 
-word		: <skip: ''> "\"" /^\s*[^"]*/ "\""
+word			: <skip: ''> "\"" /^\s*[^"]*/ "\""
 			| <error>
 
-wordsum		: <leftop: wordproduct ";" wordproduct>
+wordsum			: <leftop: wordproduct ";" wordproduct>
 			| <error>
 
-wordproduct	: word "." sum
-			| sum "." word
+wordproduct		: word "." sum
+			| sum "." sum
 			| sum
 			| word
 			| <error>
 
-positive	: "(" sum ")"
+positive		: "(" sum ")"
 			| "[" sum "]"
 			| /\d+/
 			| "%D"
 			| <error>
 
-high_low	: positive(?) ("h" | "l") positive
+high_low		: positive(?) ("h" | "l") positive
 			| positive
 			| <error>
 
 
-g_l_than	: high_low ("<=" | ">=" | "==" | "=" | ">" | "<") high_low
+g_l_than		: high_low ("<=" | ">=" | "==" | "=" | ">" | "<") high_low
 			| high_low
 			| <error>
 
-value		: g_l_than
+value			: g_l_than
 			| "-" g_l_than
 			| <error>
 
-product		: <leftop: value ("*" | "/") value>
+product			: <leftop: value ("*" | "/") value>
 			| <error>
 
 sum			: <leftop: product ("+" | "-") product>

@@ -174,7 +174,7 @@ sub positive
 
 	# we only need to check the type of brackets if the array
 	# contains more than one element
-	if ($array[1])
+	if (defined $array[1])
 	{
 		# parentheses simply return what they contain
 		if ($array[0] eq "(")
@@ -386,7 +386,7 @@ sub g_l_than
 	my $total = 0;
 
 	# return first element if there are no others
-	unless ($array[1])
+	unless (defined $array[1])
 	{
 		return $array[0];
 	}
@@ -477,19 +477,24 @@ sub sum
 		my $op = shift @array;
 		my $rhs = shift @array;
 		$rhs = convert_dice_to_number($rhs);
+		if ($op eq "/" && $rhs == 0)
+		{
+			croak "Can't divide by zero!";
+		}
+
 		if (ref $lhs)
 		{
 			for (1 .. $#{$lhs})
 			{
-				$lhs->[$_] = eval("$lhs->[$_] $op $rhs");
+				$lhs->[$_] = int(eval("$lhs->[$_] $op $rhs"));
 			}
 		}
 		else
 		{
-			$lhs = eval("$lhs $op $rhs");
+			$lhs = int(eval("$lhs $op $rhs"));
 		}
 	}
-
+	
 	return $lhs;
 }
 

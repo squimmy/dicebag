@@ -1,0 +1,15 @@
+### Dicebag config file ###
+
+maxdice = 200
+maxsides = 200
+
+maxbrackets = 30 ### do not set this higher than 50!
+timeout = 2
+format.gurps:input = 3d6
+format.gurps:output = "[";%D;"]= ";[%D];": ";"pass!".[%D]<=%X;"fail!".[%D]>%X
+format.d20:input = 1d20
+format.d20:output = "[";%D;"+";%X;"]= ";[%D]+%X;", @DC ";%Y;": ";"pass!".(([%D]+%X)>=%Y)*([%D]>1);"fumble ".%D=1;"fail!".(([%D]+%X)<%Y)*([%D]>1)
+format.deadlands:input = c{%Xd%Y=%Y}
+format.deadlands:output = "rolled: [";%D;"], taking ";h(%D);" against DC ";%Z;". ";"pass!".[h(%D)]>=%Z;"fail!".[h(%D)]<%Z;" raises: ".[h(%D)]>=%Z;(([h(%D)]-%Z)/5).[h(%D)]>=%Z
+format.fudge:input = (%Xd3)-2
+format.fudge:output = "[";%D;"], ";"+".[%D]>0;[%D]

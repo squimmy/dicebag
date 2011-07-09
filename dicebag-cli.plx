@@ -91,7 +91,7 @@ sub fillin_expression
 
 	if ($expression =~ /%X/)
 	{
-		if ($x)
+		if (defined $x)
 		{
 			$expression =~ s/%X/$x/g;
 		}
@@ -102,7 +102,7 @@ sub fillin_expression
 	}
 	if ($expression =~ /%Y/)
 	{
-		if ($y)
+		if (defined $y)
 		{
 			$expression =~ s/%Y/$y/g;
 		}
@@ -113,7 +113,7 @@ sub fillin_expression
 	}
 	if ($expression =~ /%Z/)
 	{
-		if ($z)
+		if (defined $z)
 		{
 			$expression =~ s/%Z/$z/g;
 		}

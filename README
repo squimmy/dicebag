@@ -1,0 +1,83 @@
+dicebag virtual dice rolling system
+
+Dicebag is designed as a customisable dice simulation program. Rules for rolling
+dice can be expressed uing two expressions: a roll expression (saying how many
+of what type of dice to roll) and an output expression (saying what to do with
+the dice that have been rolled).
+
+The expressions are basically algebraic expressions. Roll expressions can use
+the following special operators:
+
+	XdY :		dicebag rolls X Y-sided dice. rolls are stored as an
+			array of individual dice within the evaluator.
+
+	XhY :		returns the highest X dice in Y, where Y is the result
+			of a roll. X is optional, defaulting to 1.
+
+	XlY :		as XhY, but returning the lowest dice.
+
+	X>Y :		returns the number of dice in X greater than Y when X is
+			a roll. If Y is a number, returns 1 if true, 0 if false.
+			other comparison operators can be used in the same way:
+			(<, >=, <=, ==)
+
+	Zr{X>Y} :	for each die in roll X greater than Y, another die is
+			rolled and added to the total dice pool of X. This
+			process is repeated with the new rerolled dice, up to a
+			total of Z times. Z is optional, and if not given, dice
+			will be rerolled indefinitely until none of the rerolled
+			dice are greater than Y. As with the above operator,
+			other comparison operators are also allowed:
+			(<, >=, <=, ==)
+
+	Zc{X>Y} :	as for Zr{X>y}, but instead of rerolled dice being added
+			to the pool, they are added to the particular die that
+			triggered the reroll. take for instance the difference
+			between 1r{2d6>5} and 1c{2d6>5}. Suppose the 2d6 returns
+			(2, 6), and the reroll returns 4. the 'r' operator will
+			return (2, 6, 4), while the 'c' operator will return
+			(2, 10). This distinction is very important when
+			combined with other operators, particularly 'h', 'l'
+			and comparison operators.
+
+	(X) :		Parentheses can be used to group expressions to change
+			priority. e.g. 1+2*3 = 7, but (1+2)*3 = 9.
+
+	[X] :		Square brackets act like parentheses, but with one
+			important difference: any batches of dice inside square
+			brackets will be converted to an integer equal to the
+			total of the dice in the batch. for example, (2d6) might
+			be equal to (2, 5), but [2d7], with the same rolls,
+			would be equal to 7.
+
+	X+Y :		Basic mathematical operators are permitted and act as
+			you might expect them to. However: arithemetic is
+			performed on each die in a batch individually. Use
+			square brackets if you need to do maths with the sum
+			total of a roll. For example, 3d6+1 would give the same
+			sum total as [3d6]+3.
+
+Expressions can make use of three special variables, %X, %Y and %Z, to represent
+user input, with %X, %Y and %Z interpreted as the 1st, 2nd and 3rd arguments
+repectively.
+
+Output expressions can also use all of these expressions, except for XdY,
+Zr{X>Y} and Zc{X>Y}. In other words, you can't roll dice in the output
+expression. However, the result of the roll expression can be accessed by using
+the special variable %D. You can also include text (placed between double
+quotes, e.g. "text") and perform simple actions with this text:
+
+	%D		This will print the result of the roll expression. If
+			it is a batch of dice, they will be separated by commas.
+
+	"text".X	This will print "text" X times. This is useful for
+			printing messages like "hit" or "success" by using the
+			comparison operators. e.g. "hit".%D>=10 will print "hit"
+			if the value of the roll expression is equal to or
+			greater than 10.
+
+	%D;"text"	Blocks of text or other output must be delimited with
+			semicolons. Avoid spaces before and/or after semcolons.
+
+The module Simple.pm allows for a simplified syntax, with only the 'd' operator
+and the standard mathematical operators (+, -, * and /).
