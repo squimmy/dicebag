@@ -11,7 +11,7 @@ use strict;
 
 my @file;
 
-open CONFIG, "dicebag.cfg" or die "could not open config file: $!\n";
+open CONFIG, "config" or die "could not open config file: $!\n";
 while (<CONFIG>)
 {
 	s/#.*//;
@@ -32,7 +32,6 @@ for (@file)
 	$settings{timeout}			= $1 if /timeout\s*\=\s*(\d+)/i;
 	$settings{$1}->{input}		= $2 if /format\.\s*(\w+)\:input\s*\=\s*(.*)/i;
 	$settings{$1}->{output}		= $2 if /format\.\s*(\w+)\:output\s*\=\s*(.*)/i;
-	$settings{$1}->{verbose}	= $2 if /format\.\s*(\w+)\:verbose\s*\=\s*(.*)/i;
 	if (/format\.\s*(\w+)\:results\s*\=\s*(.*)/i)
 	{
 		my @map = split /\s*\,\s*/, $2;

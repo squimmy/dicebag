@@ -3,103 +3,129 @@ use warnings; use strict;
 
 use Dicebag::Brain;
 use Dicebag::Games;
-#use Dicebag::Output;
-use Getopt::Long;
 use Dicebag::Parser;
 use Dicebag::Verbose;
-my $verbose = '';
-my $gurps = '';
-my $wod = '';
-my $dnd = '';
-my $warhammer = '';
+use Dicebag::Settings;
+use Dicebag::Simple;
+use Getopt::Long;
+
 my $help = '';
 
+my $settings = get_settings();
 
 GetOptions
 	(
-	'gurps'					=> \$gurps,
-	'wod'					=> \$wod,
-	'dnd|d20'				=> \$dnd,
-	'warhammer|40k'			=> \$warhammer,
-	'verbose'				=> \$verbose,
 	'help|?'				=> \$help
 	);
 
-my %games=
-(
-	wod			=> \&wod,
-	gurps		=> \&gurps,
-	warhammer	=> \&warhammer,
-	dnd			=> \&dnd,
-	standard	=> \&standard_roll
-);
-
 
 help() if $help;
-check_parameters($gurps,$wod,$warhammer,$dnd);
 
 my $exp1 = shift;
 my $exp2 = shift;
 my $exp3 = shift;
-one_shot($exp1, $exp2, $exp3) if $exp1;
-interactive();
+my $exp4 = shift;
+read_input($exp1, $exp2, $exp3, $exp4) if $exp1;
+help();
 
-sub one_shot
+sub read_input
 {
 	my $exp1 = shift;
 	my $exp2 = shift;
 	my $exp3 = shift;
-	my $gametype = choose_game();
-	my $output;
-	for (keys %games)
-	{$output = $games{$_}->($exp1, $exp2, $exp3) if $_ eq $gametype}
-	handle_output($output);
+	my $exp4 = shift;
+	my ($input, $output);
+	if (have_settings($exp1))
+	{
+		$input = $settings->{$exp1}{input};
+		$output = $settings->{$exp1}{output};
+		($exp1, $exp2, $exp3) = ($exp2, $exp3, $exp4);
+		for ($exp1, $exp2, $exp3)
+		{
+			if ($_)
+			{
+				die "non-numeric value in variable!\n" if /[^\d]/;
+			}
+		}
+		$input = fillin_expression($input, $exp1, $exp2, $exp3);
+	}
+	else
+	{
+		($input, $output) = simplify($exp1);
+	}
+	$output = fillin_expression($output, $exp1, $exp2, $exp3);
+
+	my $result = parse_expression($input, $output);
+	
+	handle_output($result);
 	exit;
 }
 
-sub standard_roll
-{
-	my $expression = shift;# @ARGV;
-	my $rolls = parse_expression($expression);
-	handle_output($rolls);
-	exit;
-}
 
 sub handle_output
 {
 	my $output = shift;
-	if ($verbose)
+	print "$output\n";
+}
+
+
+sub have_settings
+{
+	my $name = shift;
+	for (keys %$settings)
 	{
-		my $verboseout = return_verbose();
-		if ($verboseout)
+		if ($name eq $_)
 		{
-			$verboseout .="Total: ";
-			print $verboseout;
+			return 1;
 		}
 	}
-	print $output->{standard};
-	print "\n";
+	return 0;
 }
 
-sub check_parameters
+sub fillin_expression
 {
-	my $count = 0;
-	for (@_){$count++ if $_}
-	if ($count > 1)
+	my $expression = shift;
+	my $x = shift;
+	my $y = shift;
+	my $z = shift;
+
+	if ($expression =~ /%X/)
 	{
-		print "You can only play one game at a time!\n";
-		exit;
+		if ($x)
+		{
+			$expression =~ s/%X/$x/g;
+		}
+		else
+		{
+			die "not enough expressions!\n";
+		}
 	}
+	if ($expression =~ /%Y/)
+	{
+		if ($y)
+		{
+			$expression =~ s/%Y/$y/g;
+		}
+		else
+		{
+			die "not enough expressions!\n";
+		}
+	}
+	if ($expression =~ /%Z/)
+	{
+		if ($z)
+		{
+			$expression =~ s/%Z/$z/g;
+		}
+		else
+		{
+			die "not enough expressions!\n";
+		}
+	}
+
+	return $expression;
 }
 
-sub choose_game
-{
-	return "gurps" if $gurps;
-	return "wod" if $wod;
-	return "dnd" if $dnd;
-	return "warhammer" if $warhammer;
-	return "standard";
-}
 
 sub help
 {

@@ -1,8 +1,8 @@
-package Dicebag::Evaluator;
+package Dicebag::Output;
 
 #########################################
 #                                       #
-# Module to evaluate trees from Parser  #
+# Module to evaluate output from Parser #
 #                                       #
 #########################################
 
@@ -10,9 +10,9 @@ use warnings;
 use Carp;
 require Exporter;
 @ISA = (Exporter);
-@EXPORT = qw(evaluate_tree);
-@EXPORT_OK = qw(high_low g_l_than sum);
+@EXPORT = qw(evaluate_output);
 use Dicebag::Brain;
+use diagnostics;
 use strict;
 
 # Trees are in the form of an array of arrays.
@@ -23,9 +23,12 @@ use strict;
 # element is the type of die (i.e. number of sides)
 # and subsequent elements are the roll values
 
-sub evaluate_tree
+my $roll;
+
+sub evaluate_output
 {
-	my $reference = shift;
+	my $reference = pop;
+	$roll = shift if $_[0];
 	my @tree = @$reference;
 
 	# empty arrays will exit here, rather than continuing
@@ -38,21 +41,22 @@ sub evaluate_tree
 	# before proceeding (unless they are batches of dice)
 	if ($#tree == 0 && ref $tree[0] && ${$tree[0]}[0] =~ /[^\d]/)
 	{
-		return evaluate_tree($tree[0]);
+		return evaluate_output($tree[0]);
 	}
 
 	# hash to match expression names to corresponding functions
 	my %functions =
 		(
-		 rule		=> \&rule,
-		 positive	=> \&positive,
-		 roll		=> \&dice,
-		 recursive	=> \&reroll_dice,
-		 high_low	=> \&high_low,
-		 g_l_than	=> \&g_l_than,
-		 value		=> \&unary_negative,
-		 product	=> \&sum,
-		 sum		=> \&sum,
+		 rule			=> \&rule,
+		 positive		=> \&positive,
+		 high_low		=> \&high_low,
+		 g_l_than		=> \&g_l_than,
+		 value			=> \&unary_negative,
+		 product		=> \&sum,
+		 sum			=> \&sum,
+		 wordsum		=> \&wordsum,
+		 wordproduct	=> \&wordproduct,
+		 word			=> \&word,
 		);
 
 	for (keys %functions)
@@ -71,7 +75,7 @@ sub evaluate_tree
 	# assigned to simple values by Parse::RecDescent
 	if (ref $tree[1])
 	{
-		return evaluate_tree($tree[1]);
+		return evaluate_output($tree[1]);
 	}
 	# or is simply returned if it is not an array
 	else
@@ -115,6 +119,32 @@ sub convert_dice_to_number
 }
 
 
+sub convert_dice_to_string
+# some expressions require dice batches to be converted
+# to a string. They can call this routine to do so.
+{
+	my $value = shift;
+	if (ref $value)
+	{
+		# Dice batches will always have at least 2 elements.
+		# a sole number in an array should be returned untouched
+		if ($#{$value} == 0)
+		{
+			return ${$value}[0];
+		}
+		else
+		{
+			local $" = ', ';
+			my $string = "@{$value}[1 .. $#$value]";
+			return $string;
+		}
+	}
+	# if not an array, return the term as-is
+	else
+	{
+		return $value;
+	}
+}
 sub check_value
 # This sub will check for values that are not a simple string
 # and evaluate them before returning them
@@ -124,7 +154,7 @@ sub check_value
 	my $value = shift;
 	if (ref $value)
 	{
-		$value = evaluate_tree($value);
+		$value = evaluate_output($value);
 	}
 	return $value;
 }
@@ -148,6 +178,7 @@ sub rule
 	$value = $array[0];
 	$value = check_value($value);
 
+	$value = convert_dice_to_number($value);
 	return $value;
 }
 
@@ -157,15 +188,15 @@ sub positive
 	my $value = shift;
 	my @array;
 
-	# not all terms passed to this sub will  be in brackets.
+	# not all terms passed to this sub will be in brackets.
 	# dereference them only if they're not a string.
 	if (ref $value)
 	{
 		@array = @$value;
 	}
-	else
+	if ($array[0] eq '%D')
 	{
-		return $value;
+		return $roll;
 	}
 	for (@array)
 	{
@@ -194,140 +225,7 @@ sub positive
 	}
 }
 
-sub dice
-# converts dice expressions to dice batches
-# (i.e. arrays or roll values)
-{
-	my $value = shift;
-	my @array = @$value;
-	# Because this expression is left-associative, the parser
-	# gives us a reference to an array containing a reference
-	# to an array. we need to dereference twice
-	@array = @{$array[0]};
-	for (@array)
-	{
-		$_ = check_value($_);
-	}
 
-	# we only need to roll dice if there is a dice expression
-	# a single letter/number can be returned unharmed
-	unless ($array[1])
-	{
-		return $array[0];
-	}
-
-	# the array could contain any number of elements.
-	# we'll shift them off as we go so nothing gets
-	# calculated twice.
-	my $lhs = shift @array;
-	while ($array[0])
-	{
-		# expressions like "1d6d6" require the fist roll
-		# to be totalled before we know how many dice to
-		# use in the next roll.
-		$lhs = convert_dice_to_number($lhs);
-		my $op = shift @array;
-		my $rhs = shift @array;
-		$rhs = convert_dice_to_number($rhs);
-		if ($op eq 'd' || $op eq 'D')
-		{
-			# store rolls as an array.
-			# the first element is the number of sides per die
-			my @dice = ($rhs, roll($lhs, $rhs));
-			$lhs = \@dice;
-		}
-	}
-
-	return $lhs;
-}
-
-sub reroll_dice
-# performs recursive and cumulative rerolling
-# expressions are in the form:
-# number, r/c, {, dice expression, comparison exression, }
-{
-	my $value = shift;
-	my @array = @$value;
-	# evaluate elements if necessary
-	for (@array)
-	{
-		$_ = check_value($_);
-	}
-	# return first element if there are no others
-	unless ($array[1])
-	{
-		return $array[0];
-	}
-	# '=' is fine as a comparison, but the evaluator
-	# doesn't like it. change it to '==' here
-	if ($array[4] eq "=")
-	{
-		$array[4] = "==";
-	}
-
-	# evaluate the meaning of the comparison here
-	my $sign;			# do we want greater or less than the target
-	my $threshold = $array[5];	# target number to beat for reroll
-	my $count = $array[0];		# a limit (if any) to the number of rerolls
-	#$count ||= 1;
-	if ($array[4] =~ /</)
-	{
-		$sign = -1;
-	}
-	elsif ($array[4] =~ />/)
-	{
-		$sign = 1;
-	}
-	else
-	{
-		$sign = 0;
-	}
-	# the subroutine to reroll dice uses < and >.
-	# change the threshold number to make <= and >= equivalent.
-	if ($array[4] !~ /=/)
-	{
-		$threshold += $sign;
-	}
-
-	# simple recursive rerolling:
-	if ($array[1] eq "r")
-	{
-		my $dice = 0;
-		# $array[3] should be a dice expression.
-		# compare each value with the comparison expresssion provided in the 
-		# following elements ($array[4] and $array[5]) to see how many dice are rerolled
-		for (1 .. $#{$array[3]})
-		{
-			$dice++ if eval("${$array[3]}[$_] $array[4] $array[5]");
-		}
-		if ($dice)
-		{
-
-			# add rerolls to the batch of dice
-			# TODO: put something here to stop infinite rerolling.
-			push @{$array[3]}, recursive_rolling($dice, ${$array[3]}[0], $threshold, $sign, $count);
-		}
-	}
-	# "cumulative" rerolling.
-	# rerolls are added to each die rerolled, rather than added to the batch
-	else
-	{
-		for(1 .. $#{$array[3]})
-		{
-			my @dice;
-			if (eval("${$array[3]}[$_] $array[4] $array[5]"))
-			{
-				@dice = recursive_rolling(1, ${$array[3]}[0], $threshold, $sign, $count);
-				for my $roll (@dice)
-				{
-					${$array[3]}[$_] += $roll;
-				}
-			}
-		}
-	}
-
-	return $array[3];
-}
 
 sub high_low
 # remove all but the highest or lowest dice from a batch of rolls
@@ -491,6 +389,70 @@ sub sum
 	}
 
 	return $lhs;
+}
+
+
+sub wordsum
+{
+	my $value = shift;
+	my @array = @$value;
+
+	# like the dice expression, is left-associative, so we need to dereference twice
+	@array = @{$array[0]};
+
+	for (@array)
+	{
+		$_ = check_value($_);
+	}
+
+	my $result = "";
+
+	for (@array)
+	{
+		$_ = convert_dice_to_string($_);
+		$result .= $_ if defined $_;
+	}
+
+	return $result;
+
+}
+
+
+sub wordproduct
+{
+	my $value = shift;
+	my @array = @$value;
+
+	for (@array)
+	{
+		$_ = check_value($_);
+	}
+
+	if ($array[1])
+	{
+		my $lhs = $array[0];
+		my $rhs = $array[2];
+		$lhs = convert_dice_to_number($lhs);
+		$rhs = convert_dice_to_number($rhs);
+		return $lhs x $rhs;
+	}
+
+	return $array[0];
+}
+
+
+sub word
+{
+	my $value = shift;
+	my @array = @$value;
+
+	for (@array)
+	{
+		$_ = check_value($_);
+	}
+
+	return $array[2];
+
 }
 
 
